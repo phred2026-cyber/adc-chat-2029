@@ -49,9 +49,8 @@ function escapeHtml(text) {
 
 // Connect to WebSocket
 function connect() {
-    // Use current host for WebSocket connection
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    // Connect to Cloudflare Worker backend
+    const wsUrl = 'wss://adc-chat-2029.phred2026.workers.dev/ws';
     
     ws = new WebSocket(wsUrl);
     
