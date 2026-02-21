@@ -346,7 +346,16 @@ export default {
           env
         );
 
-        return new Response(JSON.stringify({ accessToken }), {
+        // Also return updated user so frontend stays in sync
+        return new Response(JSON.stringify({ 
+          accessToken,
+          user: {
+            id: session.user_id,
+            username: session.username,
+            email: session.email,
+            profile_image_url: session.profile_image_url,
+          }
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

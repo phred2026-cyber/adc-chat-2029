@@ -435,15 +435,28 @@ async function checkAuth() {
     refreshToken = localStorage.getItem('refreshToken');
     const userJson = localStorage.getItem('user');
 
-    if (!accessToken || !refreshToken || !userJson) {
+    if (!refreshToken) {
         window.location.href = '/auth.html';
         return false;
     }
 
-    currentUser = JSON.parse(userJson);
-    accountName.textContent = currentUser.username;
-    accountEmail.textContent = currentUser.email;
-    updateProfileAvatar(currentUser);
+    // Load cached user immediately so UI shows fast
+    if (userJson) {
+        currentUser = JSON.parse(userJson);
+        if (accountName) accountName.textContent = currentUser.username;
+        if (accountEmail) accountEmail.textContent = currentUser.email;
+        updateProfileAvatar(currentUser);
+    }
+
+    // Always do a background refresh on page load to:
+    // 1. Get a fresh access token
+    // 2. Sync latest user data (profile pic etc) from server
+    const ok = await refreshAccessToken();
+    if (!ok && !accessToken) {
+        // No valid session at all
+        window.location.href = '/auth.html';
+        return false;
+    }
     return true;
 }
 
@@ -462,6 +475,12 @@ async function refreshAccessToken() {
             const data = await response.json();
             accessToken = data.accessToken;
             localStorage.setItem('accessToken', accessToken);
+            // Sync fresh user data (profile pic etc) from server
+            if (data.user) {
+                currentUser = { ...currentUser, ...data.user };
+                localStorage.setItem('user', JSON.stringify(currentUser));
+                updateProfileAvatar(currentUser);
+            }
             return true;
         } else if (response.status === 401) {
             logout();
