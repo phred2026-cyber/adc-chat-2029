@@ -2,307 +2,134 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a2332">
     <title>ADC Class of 2029 Chat</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        /* Settings button */
-        .settings-btn {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            width: 50px;
-            height: 50px;
-            background: #1a2332;
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            color: #d4a574;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            transition: background 0.3s, transform 0.2s;
-            z-index: 1000;
-        }
-        
-        .settings-btn:hover {
-            background: #2c3e50;
-            transform: scale(1.1);
-        }
-        
-        /* Settings panel */
-        .settings-panel {
-            position: fixed;
-            bottom: 80px;
-            left: 20px;
-            width: 320px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            display: none;
-            z-index: 999;
-            animation: slideUp 0.3s ease;
-            max-height: calc(100vh - 120px);
-            overflow-y: auto;
-        }
-        
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .settings-panel.show {
-            display: block;
-        }
-        
-        .settings-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid #ecf0f1;
-            background: #1a2332;
-            color: #d4a574;
-            border-radius: 10px 10px 0 0;
-        }
-        
-        .settings-header h3 {
-            margin: 0;
-            font-size: 18px;
-        }
-        
-        .settings-content {
-            padding: 20px;
-        }
-        
-        .settings-section {
-            margin-bottom: 20px;
-        }
-        
-        .settings-section h4 {
-            margin: 0 0 10px 0;
-            color: #1a2332;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .account-info {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-        
-        .account-info p {
-            margin: 5px 0;
-            color: #2c3e50;
-            font-size: 14px;
-        }
-        
-        .account-info strong {
-            color: #1a2332;
-        }
-        
-        .profile-image-section {
-            text-align: center;
-            padding: 15px 0;
-        }
-        
-        .profile-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            margin: 0 auto 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            font-size: 32px;
-            background: #1a2332;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .profile-avatar img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .image-upload-btn {
-            background: #d4a574;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background 0.3s;
-            margin-top: 10px;
-        }
-        
-        .image-upload-btn:hover {
-            background: #c49564;
-        }
-        
-        .image-upload-btn:disabled {
-            background: #95a5a6;
-            cursor: not-allowed;
-        }
-        
-        #profileImageInput {
-            display: none;
-        }
-        
-        .upload-status {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #7f8c8d;
-        }
-        
-        .upload-status.error {
-            color: #e74c3c;
-        }
-        
-        .upload-status.success {
-            color: #27ae60;
-        }
-        
-        .logout-btn {
-            width: 100%;
-            padding: 12px;
-            background: #e74c3c;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        
-        .logout-btn:hover {
-            background: #c0392b;
-        }
-        
-        /* Status indicator */
-        .status-indicator {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 8px 15px;
-            border-radius: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            font-size: 14px;
-        }
-        
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #95a5a6;
-        }
-        
-        .status-dot.connected {
-            background: #27ae60;
-        }
-        
-        .status-dot.connecting {
-            background: #d4a574;
-        }
-        
-        /* Overlay to close settings */
-        .settings-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: transparent;
-            display: none;
-            z-index: 998;
-        }
-        
-        .settings-overlay.show {
-            display: block;
-        }
-    </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎓 ADC Class of 2029</h1>
-            <p>Live Chat</p>
-            <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Connecting...</span>
+            <div class="header-title">
+                <h1>🎓 ADC 2029</h1>
+                <span class="header-subtitle">Live Chat</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="header-refresh-btn" id="headerRefreshBtn" aria-label="Refresh">🔄</button>
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Connecting...</span>
+                </div>
+                <!-- Mobile: settings gear in header -->
+                <button class="header-settings-btn" id="headerSettingsBtn" aria-label="Settings">⚙️</button>
             </div>
         </header>
-        
-        <div class="chat-container">
+
+        <div class="chat-container" id="chatContainer">
+            <!-- Pull-to-refresh indicator -->
+            <div class="pull-refresh-indicator" id="pullRefreshIndicator">
+                <div class="pull-refresh-spin" id="pullRefreshSpin"></div>
+                <span id="pullRefreshText">Pull to refresh</span>
+            </div>
+
             <div id="messages" class="messages"></div>
-            <div id="typingIndicator" class="typing-indicator" style="display: none;"></div>
+            <div id="typingIndicator" class="typing-indicator" style="display:none;">
+                <div class="typing-dots"><span></span><span></span><span></span></div>
+                <span id="typingText"></span>
+            </div>
         </div>
-        
-        <div class="input-container">
-            <input 
-                type="text" 
-                id="messageInput" 
-                placeholder="Type your message..." 
+
+        <div class="input-container" id="inputContainer">
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Message..."
                 maxlength="500"
                 autocomplete="off"
+                autocorrect="on"
+                autocapitalize="sentences"
+                enterkeyhint="send"
             />
             <button id="sendBtn">Send</button>
         </div>
     </div>
-    
-    <!-- Settings button -->
-    <button class="settings-btn" id="settingsBtn">⚙️</button>
-    
+
+    <!-- Desktop settings button (bottom-left FAB) -->
+    <button class="settings-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
+
     <!-- Settings overlay -->
     <div class="settings-overlay" id="settingsOverlay"></div>
-    
-    <!-- Settings panel -->
-    <div class="settings-panel" id="settingsPanel">
+
+    <!-- Settings panel (bottom sheet on mobile, floating on desktop, side drawer on tablet) -->
+    <div class="settings-panel" id="settingsPanel" role="dialog" aria-label="Settings">
         <div class="settings-header">
-            <h3>Settings</h3>
+            <h3>⚙️ Settings</h3>
+            <button class="settings-close-btn" id="settingsCloseBtn" aria-label="Close settings">✕</button>
         </div>
         <div class="settings-content">
             <div class="settings-section">
-                <h4>Profile</h4>
+                <h4>Profile Photo</h4>
                 <div class="profile-image-section">
-                    <div class="profile-avatar" id="profileAvatar">
+                    <div class="profile-avatar" id="profileAvatar" title="Click to change photo">
                         <span id="profileInitials">?</span>
-                        <img id="profileImage" style="display: none;">
+                        <img id="profileImage" style="display:none;" alt="Profile">
+                        <div class="profile-avatar-overlay">📷</div>
                     </div>
-                    <input type="file" id="profileImageInput" accept="image/*" capture="environment">
-                    <button class="image-upload-btn" id="uploadImageBtn">Change Photo</button>
+                    <input type="file" id="profileImageInput" accept="image/*">
+                    <button class="image-upload-btn" id="uploadImageBtn">📷 Change Photo</button>
                     <div id="uploadStatus" class="upload-status"></div>
                 </div>
             </div>
-            
+
             <div class="settings-section">
                 <h4>Account</h4>
                 <div class="account-info">
                     <p><strong>Name:</strong> <span id="accountName">Loading...</span></p>
                     <p><strong>Email:</strong> <span id="accountEmail">Loading...</span></p>
                 </div>
-                <button class="logout-btn" id="logoutBtn">Logout</button>
+                <button class="logout-btn" id="logoutBtn">🚪 Logout</button>
             </div>
         </div>
     </div>
-    
+
+    <!-- Delete confirmation modal -->
+    <div class="modal-overlay" id="deleteModal" role="dialog" aria-label="Confirm delete">
+        <div class="modal">
+            <h3>Delete Message?</h3>
+            <p>This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="cancelDelete()">Cancel</button>
+                <button class="modal-btn confirm" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Cropper Modal -->
+    <div class="cropper-modal-overlay" id="cropperModal" role="dialog" aria-label="Crop photo">
+        <div class="cropper-modal">
+            <div class="cropper-modal-header">
+                <h3>✂️ Crop Photo</h3>
+                <button class="cropper-close-btn" id="cropperCloseBtn">✕</button>
+            </div>
+            <div class="cropper-viewport" id="cropperViewport">
+                <!-- Canvas drawn by JS -->
+            </div>
+            <div class="cropper-instruction">Drag to move • Scroll/pinch to zoom</div>
+            <div class="cropper-footer">
+                <div class="cropper-preview">
+                    <img id="cropperPreview" src="" alt="Preview">
+                </div>
+                <div class="cropper-actions">
+                    <button class="cropper-btn cancel" id="cropperCancelBtn">Cancel</button>
+                    <button class="cropper-btn save" id="cropperSaveBtn">Save Photo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="app-cloudflare.js"></script>
 </body>
 </html>
