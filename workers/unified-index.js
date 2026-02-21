@@ -1,8 +1,8 @@
 // Unified Cloudflare Worker for ADC Chat 2029 with Authentication and Enhancements
 // Uses Web Crypto API (native to Cloudflare Workers)
 
-const ACCESS_TOKEN_EXPIRES_MS = 15 * 60 * 1000; // 15 minutes
-const REFRESH_TOKEN_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ACCESS_TOKEN_EXPIRES_MS = 60 * 60 * 1000; // 1 hour (longer session)
+const REFRESH_TOKEN_EXPIRES_MS = 31 * 24 * 60 * 60 * 1000; // 31 days
 
 // Generate random token
 function generateToken() {

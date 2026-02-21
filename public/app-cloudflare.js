@@ -105,19 +105,28 @@ async function checkAuth() {
         });
         
         if (response.ok) {
+            console.log('Auth verified successfully');
             return true;
         }
         
+        // Token expired, try to refresh
+        console.log('Access token expired, refreshing...');
         return await refreshAccessToken();
     } catch (error) {
         console.error('Auth check failed:', error);
-        logout();
+        // Don't logout on network errors
         return false;
     }
 }
 
 // Refresh access token
 async function refreshAccessToken() {
+    if (!refreshToken) {
+        console.error('No refresh token available');
+        logout();
+        return false;
+    }
+    
     try {
         const response = await fetch(`${API_URL}/auth/refresh`, {
             method: 'POST',
@@ -129,14 +138,17 @@ async function refreshAccessToken() {
             const data = await response.json();
             accessToken = data.accessToken;
             localStorage.setItem('accessToken', accessToken);
+            console.log('Access token refreshed successfully');
             return true;
         } else {
+            const errorData = await response.json();
+            console.error('Token refresh failed:', errorData);
             logout();
             return false;
         }
     } catch (error) {
-        console.error('Token refresh failed:', error);
-        logout();
+        console.error('Token refresh network error:', error);
+        // Don't logout on network errors, just log and retry later
         return false;
     }
 }
@@ -481,10 +493,11 @@ messageInput.addEventListener('keypress', (e) => {
     }
 });
 
-// Auto-refresh token every 10 minutes
+// Auto-refresh token every 30 minutes (before 1-hour expiry)
 setInterval(async () => {
+    console.log('Auto-refreshing access token...');
     await refreshAccessToken();
-}, 10 * 60 * 1000);
+}, 30 * 60 * 1000);
 
 // Focus message input on load
 window.addEventListener('load', () => {
