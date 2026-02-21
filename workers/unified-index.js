@@ -532,7 +532,7 @@ export class ChatRoom {
     
     // Get last 100 messages with profile images
     const messages = await this.env.DB.prepare(
-      'SELECT m.id, m.user_id, m.username, m.text, m.timestamp, m.profile_image_url, m.created_at FROM messages ORDER BY m.created_at DESC LIMIT 100'
+      'SELECT id, user_id, username, text, timestamp, profile_image_url, created_at FROM messages ORDER BY created_at DESC LIMIT 100'
     ).all();
     
     websocket.send(JSON.stringify({
