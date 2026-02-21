@@ -435,10 +435,26 @@ export default {
           });
         }
 
-        // Store base64 image directly (alternatively, upload to R2)
-        await env.DB.prepare(
-          'UPDATE users SET profile_image_url = ? WHERE id = ?'
-        ).bind(image, payload.userId).run();
+        // Check size limit (~100KB base64 max)
+        if (image.length > 140000) {
+          return new Response(JSON.stringify({ error: `Image too large (${Math.round(image.length/1024)}KB). Max ~100KB. Please use a smaller image.` }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Store base64 image in D1
+        try {
+          await env.DB.prepare(
+            'UPDATE users SET profile_image_url = ? WHERE id = ?'
+          ).bind(image, payload.userId).run();
+        } catch (dbErr) {
+          console.error('DB error saving profile image:', dbErr);
+          return new Response(JSON.stringify({ error: `Database error: ${dbErr.message}` }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
 
         return new Response(JSON.stringify({
           success: true,

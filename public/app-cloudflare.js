@@ -747,38 +747,70 @@ if (profileImageInput) {
     });
 }
 
+// Compress image to ensure it's small enough for D1
+function compressImage(base64, maxSizeKB = 80) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            // Force 128x128 - small enough for D1, still looks good as avatar
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 128, 128);
+            // Start with quality 0.7 and reduce if needed
+            let quality = 0.7;
+            let result = canvas.toDataURL('image/jpeg', quality);
+            while (result.length > maxSizeKB * 1024 * 1.37 && quality > 0.1) {
+                quality -= 0.1;
+                result = canvas.toDataURL('image/jpeg', quality);
+            }
+            console.log(`Image compressed to ~${Math.round(result.length * 0.75 / 1024)}KB at quality ${quality.toFixed(1)}`);
+            resolve(result);
+        };
+        img.src = base64;
+    });
+}
+
 async function uploadProfileImage(base64) {
-    uploadImageBtn.disabled = true;
-    uploadStatus.textContent = 'Uploading...';
-    uploadStatus.className = 'upload-status';
+    if (uploadImageBtn) uploadImageBtn.disabled = true;
+    if (uploadStatus) { uploadStatus.textContent = 'Compressing...'; uploadStatus.className = 'upload-status'; }
 
     try {
+        // Compress image before upload
+        const compressed = await compressImage(base64);
+        console.log(`Uploading image, size: ~${Math.round(compressed.length * 0.75 / 1024)}KB`);
+
+        if (uploadStatus) uploadStatus.textContent = 'Uploading...';
+
         const response = await fetch(`${API_URL}/profile/update-image`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ image: base64 }),
+            body: JSON.stringify({ image: compressed }),
         });
 
+        const responseText = await response.text();
+        console.log('Upload response:', response.status, responseText);
+
         if (response.ok) {
-            const data = await response.json();
+            const data = JSON.parse(responseText);
             currentUser.profile_image_url = data.profile_image_url;
             localStorage.setItem('user', JSON.stringify(currentUser));
             updateProfileAvatar(currentUser);
-            uploadStatus.textContent = '✅ Profile photo updated!';
-            uploadStatus.className = 'upload-status success';
-            setTimeout(() => { uploadStatus.textContent = ''; }, 3000);
+            if (uploadStatus) { uploadStatus.textContent = '✅ Profile photo updated!'; uploadStatus.className = 'upload-status success'; }
+            setTimeout(() => { if (uploadStatus) uploadStatus.textContent = ''; }, 3000);
         } else {
-            throw new Error('Upload failed');
+            console.error('Upload failed:', response.status, responseText);
+            throw new Error(`Upload failed: ${response.status} - ${responseText}`);
         }
     } catch (err) {
         console.error('Upload error:', err);
-        uploadStatus.textContent = 'Upload failed. Try again.';
-        uploadStatus.className = 'upload-status error';
+        if (uploadStatus) { uploadStatus.textContent = `Failed: ${err.message}`; uploadStatus.className = 'upload-status error'; }
     } finally {
-        uploadImageBtn.disabled = false;
+        if (uploadImageBtn) uploadImageBtn.disabled = false;
     }
 }
 
