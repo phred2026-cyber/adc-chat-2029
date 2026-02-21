@@ -506,12 +506,43 @@ export default {
   }
 };
 
+// ============================================================
+// Game helpers
+// ============================================================
+const WIN_PATTERNS = [
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6]
+];
+
+function checkSmallBoard(cells) {
+  for (const [a,b,c] of WIN_PATTERNS) {
+    if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
+  }
+  if (cells.every(c => c !== null)) return 'draw';
+  return null;
+}
+
+function checkBigBoard(bigBoard) {
+  for (const [a,b,c] of WIN_PATTERNS) {
+    if (bigBoard[a] && bigBoard[a] !== 'draw' && bigBoard[a] === bigBoard[b] && bigBoard[a] === bigBoard[c]) return bigBoard[a];
+  }
+  if (bigBoard.every(c => c !== null)) return 'draw';
+  return null;
+}
+
+function generateGameId() {
+  return crypto.randomUUID();
+}
+
 // Durable Object class for managing chat state and WebSocket connections
 export class ChatRoom {
   constructor(state, env) {
     this.state = state;
     this.env = env;
     this.sessions = [];
+    this.games = new Map();      // gameId -> gameState
+    this.challenges = new Map(); // challengeId -> challenge
   }
   
   async fetch(request) {
@@ -575,11 +606,18 @@ export class ChatRoom {
         profile_image_url: m.profile_image_url,
       })),
     }));
+
+    // Send online users list to new connection
+    websocket.send(JSON.stringify({
+      type: 'online-users',
+      users: this.sessions.map(s => ({ userId: s.user.userId, username: s.user.username })),
+    }));
     
     this.broadcast({
       type: 'system-message',
       text: `${user.username} joined the chat`,
     }, session.id);
+    this.broadcastOnlineUsers();
     
     websocket.addEventListener('message', async (event) => {
       try {
@@ -640,6 +678,195 @@ export class ChatRoom {
             type: 'typing-stop',
             username: user.username,
           }, session.id);
+
+        // ====================================================
+        // GAME HANDLERS
+        // ====================================================
+        } else if (data.type === 'game-challenge') {
+          const challengeId = generateGameId();
+          const challenge = {
+            id: challengeId,
+            challengerId: user.userId,
+            challengerName: user.username,
+            game: data.game || 'ultimate-ttt',
+            gameName: data.gameName || 'Ultimate Tic-Tac-Toe',
+            targetUserId: data.targetUserId || null, // null = open
+            createdAt: Date.now(),
+          };
+          this.challenges.set(challengeId, challenge);
+
+          // Schedule cleanup
+          setTimeout(() => this.challenges.delete(challengeId), 5 * 60 * 1000);
+
+          if (data.targetUserId) {
+            // Send only to specific target
+            this.sendToUser(data.targetUserId, {
+              type: 'game-challenge',
+              challenge,
+            });
+          } else {
+            // Broadcast to everyone except challenger
+            this.broadcast({
+              type: 'game-challenge',
+              challenge,
+            }, session.id);
+          }
+
+        } else if (data.type === 'game-accepted') {
+          const { challengeId } = data;
+          const challenge = this.challenges.get(challengeId);
+          if (!challenge) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Challenge not found or expired' }));
+            return;
+          }
+          if (challenge.challengerId === user.userId) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Cannot accept your own challenge' }));
+            return;
+          }
+          this.challenges.delete(challengeId);
+
+          // Create game — challenger is X, accepter is O
+          const gameId = generateGameId();
+          const gameState = {
+            gameId,
+            game: challenge.game,
+            gameName: challenge.gameName,
+            players: {
+              X: { userId: challenge.challengerId, username: challenge.challengerName },
+              O: { userId: user.userId, username: user.username },
+            },
+            bigBoard: Array(9).fill(null),
+            smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
+            currentPlayer: 'X',
+            gameOver: false,
+            winner: null,
+            createdAt: Date.now(),
+          };
+          this.games.set(gameId, gameState);
+
+          // Schedule cleanup after 1 hour
+          setTimeout(() => this.games.delete(gameId), 60 * 60 * 1000);
+
+          // Notify both players
+          this.sendToUser(challenge.challengerId, {
+            type: 'game-started',
+            gameState,
+            yourSymbol: 'X',
+          });
+          this.sendToUser(user.userId, {
+            type: 'game-started',
+            gameState,
+            yourSymbol: 'O',
+          });
+
+          // Broadcast to everyone that challenge was accepted (remove invite card)
+          this.broadcast({
+            type: 'game-challenge-accepted',
+            challengeId,
+            gameId,
+            player1: challenge.challengerName,
+            player2: user.username,
+          });
+
+        } else if (data.type === 'game-declined') {
+          const { challengeId } = data;
+          const challenge = this.challenges.get(challengeId);
+          if (challenge) {
+            this.challenges.delete(challengeId);
+            this.sendToUser(challenge.challengerId, {
+              type: 'game-declined',
+              challengeId,
+              declinedBy: user.username,
+            });
+          }
+          // Tell everyone to remove the invite card
+          this.broadcast({
+            type: 'game-challenge-removed',
+            challengeId,
+          });
+
+        } else if (data.type === 'game-move') {
+          const { gameId, boardIndex, cellIndex } = data;
+          const game = this.games.get(gameId);
+          if (!game) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Game not found' }));
+            return;
+          }
+          if (game.gameOver) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Game is already over' }));
+            return;
+          }
+
+          // Validate it's this player's turn
+          const expectedPlayer = game.currentPlayer;
+          const expectedUserId = game.players[expectedPlayer].userId;
+          if (user.userId !== expectedUserId) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Not your turn' }));
+            return;
+          }
+
+          // Validate board/cell
+          if (boardIndex < 0 || boardIndex > 8 || cellIndex < 0 || cellIndex > 8) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Invalid move' }));
+            return;
+          }
+          if (game.bigBoard[boardIndex] !== null) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Board already won' }));
+            return;
+          }
+          if (game.smallBoards[boardIndex][cellIndex] !== null) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Cell already taken' }));
+            return;
+          }
+
+          // Make the move
+          game.smallBoards[boardIndex][cellIndex] = expectedPlayer;
+
+          // Check if small board won
+          const smallResult = checkSmallBoard(game.smallBoards[boardIndex]);
+          if (smallResult) {
+            game.bigBoard[boardIndex] = smallResult;
+          }
+
+          // Check big board
+          const bigResult = checkBigBoard(game.bigBoard);
+          if (bigResult) {
+            game.gameOver = true;
+            game.winner = bigResult;
+          }
+
+          // Switch player
+          game.currentPlayer = expectedPlayer === 'X' ? 'O' : 'X';
+
+          // Send updated state to both players
+          const xId = game.players.X.userId;
+          const oId = game.players.O.userId;
+          this.sendToUser(xId, { type: 'game-state-update', gameState: game });
+          this.sendToUser(oId, { type: 'game-state-update', gameState: game });
+
+          if (game.gameOver) {
+            // Broadcast to everyone that game ended
+            this.broadcast({
+              type: 'game-over-announce',
+              gameId,
+              player1: game.players.X.username,
+              player2: game.players.O.username,
+              winner: game.winner,
+            });
+            // Cleanup after 1 minute
+            setTimeout(() => this.games.delete(gameId), 60 * 1000);
+          }
+
+        } else if (data.type === 'game-cancelled') {
+          const { challengeId } = data;
+          const challenge = this.challenges.get(challengeId);
+          if (challenge && challenge.challengerId === user.userId) {
+            this.challenges.delete(challengeId);
+            this.broadcast({
+              type: 'game-challenge-removed',
+              challengeId,
+            });
+          }
         }
       } catch (err) {
         console.error('Error handling message:', err);
@@ -652,10 +879,12 @@ export class ChatRoom {
         type: 'system-message',
         text: `${user.username} left the chat`,
       });
+      this.broadcastOnlineUsers();
     });
     
     websocket.addEventListener('error', () => {
       this.sessions = this.sessions.filter(s => s.id !== session.id);
+      this.broadcastOnlineUsers();
     });
   }
   
@@ -670,5 +899,26 @@ export class ChatRoom {
         }
       }
     });
+  }
+
+  sendToUser(userId, data) {
+    const message = JSON.stringify(data);
+    this.sessions.forEach(s => {
+      if (s.user && s.user.userId === userId) {
+        try {
+          s.websocket.send(message);
+        } catch (err) {
+          // Client disconnected
+        }
+      }
+    });
+  }
+
+  broadcastOnlineUsers() {
+    const users = this.sessions.map(s => ({
+      userId: s.user.userId,
+      username: s.user.username,
+    }));
+    this.broadcast({ type: 'online-users', users });
   }
 }

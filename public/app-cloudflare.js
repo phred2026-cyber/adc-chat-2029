@@ -11,6 +11,9 @@ let refreshToken = null;
 let isTyping = false;
 let typingUsers = new Set();
 let typingStopTimeout = null;
+let onlineUsers = [];
+// Track invite cards in chat
+const pendingChallenges = new Map(); // challengeId -> DOM element
 
 // ============================================================
 // DOM Elements
@@ -884,6 +887,9 @@ function connectWebSocket() {
     ws.onopen = () => {
         setStatus('connected');
         if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+        // Wire up game components
+        if (typeof UltimateTTT !== 'undefined') UltimateTTT.init(ws);
+        if (typeof GameMenu !== 'undefined') GameMenu.init(ws, currentUser);
     };
 
     ws.onmessage = (event) => {
@@ -910,6 +916,44 @@ function connectWebSocket() {
                 handleTypingStop(data.username);
             } else if (data.type === 'message-deleted') {
                 removeMessage(data.messageId);
+            } else if (data.type === 'online-users') {
+                onlineUsers = data.users || [];
+                if (typeof GameMenu !== 'undefined') GameMenu.updateOnlineUsers(onlineUsers);
+            } else if (data.type === 'game-challenge') {
+                handleIncomingChallenge(data.challenge);
+            } else if (data.type === 'game-challenge-accepted') {
+                // Remove the invite card from chat
+                const card = pendingChallenges.get(data.challengeId);
+                if (card) {
+                    card.remove();
+                    pendingChallenges.delete(data.challengeId);
+                }
+                // Show system message
+                addSystemMessage(`${data.player1} vs ${data.player2} — game started!`);
+            } else if (data.type === 'game-challenge-removed') {
+                const card = pendingChallenges.get(data.challengeId);
+                if (card) {
+                    card.remove();
+                    pendingChallenges.delete(data.challengeId);
+                }
+            } else if (data.type === 'game-started') {
+                if (typeof UltimateTTT !== 'undefined') {
+                    UltimateTTT.init(ws);
+                    UltimateTTT.startGame(data.gameState, data.yourSymbol);
+                }
+            } else if (data.type === 'game-state-update') {
+                if (typeof UltimateTTT !== 'undefined') {
+                    UltimateTTT.updateState(data.gameState);
+                }
+            } else if (data.type === 'game-declined') {
+                showToast(`${data.declinedBy} declined your challenge`);
+            } else if (data.type === 'game-over-announce') {
+                const winnerText = data.winner === 'draw'
+                    ? `${data.player1} vs ${data.player2} ended in a draw!`
+                    : `${data.player1} vs ${data.player2} — ${data.player1 === data.winner ? data.player1 : data.player2} wins!`;
+                addSystemMessage(`🎮 ${winnerText}`);
+            } else if (data.type === 'game-error') {
+                showToast(`Game error: ${data.error}`);
             }
         } catch (err) {
             console.error('WS parse error:', err);
@@ -1104,6 +1148,112 @@ messageInput.addEventListener('keydown', (e) => {
         sendMessage();
     }
 });
+
+// ============================================================
+// Game UI helpers
+// ============================================================
+
+function handleIncomingChallenge(challenge) {
+    const isForMe = !challenge.targetUserId || (currentUser && challenge.targetUserId == currentUser.id);
+    if (!isForMe) return;
+
+    removeEmptyState();
+    const card = document.createElement('div');
+    card.className = 'game-invite-card';
+    card.dataset.challengeId = challenge.id;
+
+    const isTargeted = !!challenge.targetUserId;
+    const msg = isTargeted
+        ? `${escapeHtml(challenge.challengerName)} challenged you to ${escapeHtml(challenge.gameName)}!`
+        : `${escapeHtml(challenge.challengerName)} wants to play ${escapeHtml(challenge.gameName)}!`;
+
+    const isOwnChallenge = currentUser && challenge.challengerId == currentUser.id;
+
+    card.innerHTML = `
+        <span class="game-invite-icon">🎮</span>
+        <span class="game-invite-text">${msg}</span>
+        <div class="game-invite-actions">
+            ${isOwnChallenge
+                ? `<button class="game-invite-btn cancel" onclick="cancelChallenge('${challenge.id}')">Cancel</button>`
+                : `<button class="game-invite-btn accept" onclick="acceptChallenge('${challenge.id}')">Accept</button>
+                   ${isTargeted ? `<button class="game-invite-btn decline" onclick="declineChallenge('${challenge.id}')">Decline</button>` : ''}`
+            }
+        </div>
+    `;
+    messagesContainer.appendChild(card);
+    pendingChallenges.set(challenge.id, card);
+    scrollToBottom(true);
+}
+
+function acceptChallenge(challengeId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'game-accepted', challengeId }));
+    const card = pendingChallenges.get(challengeId);
+    if (card) { card.remove(); pendingChallenges.delete(challengeId); }
+}
+
+function declineChallenge(challengeId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'game-declined', challengeId }));
+    const card = pendingChallenges.get(challengeId);
+    if (card) { card.remove(); pendingChallenges.delete(challengeId); }
+}
+
+function cancelChallenge(challengeId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'game-cancelled', challengeId }));
+    const card = pendingChallenges.get(challengeId);
+    if (card) { card.remove(); pendingChallenges.delete(challengeId); }
+}
+
+function showToast(msg) {
+    let toast = document.getElementById('gameToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'gameToast';
+        toast.className = 'game-toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3500);
+}
+
+// Game menu handlers (called from HTML)
+function openGameMenu() {
+    if (typeof GameMenu !== 'undefined') {
+        GameMenu.updateOnlineUsers(onlineUsers);
+        GameMenu.init(ws, currentUser);
+        GameMenu.open();
+    }
+    const overlay = document.getElementById('gameMenuOverlay');
+    if (overlay) overlay.classList.add('show');
+}
+
+function closeGameMenu() {
+    if (typeof GameMenu !== 'undefined') GameMenu.close();
+    const overlay = document.getElementById('gameMenuOverlay');
+    if (overlay) overlay.classList.remove('show');
+}
+
+function sendOpenChallenge() {
+    if (typeof GameMenu !== 'undefined') GameMenu.sendChallenge(null);
+}
+
+function sendTargetedChallenge() {
+    const select = document.getElementById('challengeUserSelect');
+    if (!select || !select.value) { showToast('Pick a player first!'); return; }
+    if (typeof GameMenu !== 'undefined') GameMenu.sendChallenge(select.value);
+}
+
+function closeGameModal() {
+    if (typeof UltimateTTT !== 'undefined') UltimateTTT.closeGame();
+}
+
+function gamePlayAgain() {
+    if (typeof UltimateTTT !== 'undefined') UltimateTTT.closeGame();
+    openGameMenu();
+}
 
 // ============================================================
 // Auto-refresh token

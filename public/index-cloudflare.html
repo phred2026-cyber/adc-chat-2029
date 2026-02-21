@@ -53,6 +53,7 @@
                 autocapitalize="sentences"
                 enterkeyhint="send"
             />
+            <button class="game-btn" id="gameBtn" onclick="openGameMenu()" aria-label="Games" title="Play a game">🎮</button>
             <button id="sendBtn">Send</button>
         </div>
     </div>
@@ -130,6 +131,55 @@
         </div>
     </div>
 
+    <!-- Game Menu -->
+    <div class="game-menu-overlay" id="gameMenuOverlay" onclick="closeGameMenu()"></div>
+    <div class="game-menu" id="gameMenu" role="dialog" aria-label="Game Menu">
+        <div class="game-menu-header">
+            <h3>🎮 Games</h3>
+            <button class="game-menu-close" onclick="closeGameMenu()">✕</button>
+        </div>
+        <div class="game-menu-content">
+            <div class="game-card">
+                <div class="game-card-title">🟦 Ultimate Tic-Tac-Toe</div>
+                <div class="game-card-desc">9 boards in a grid — win 3 boards to win the match!</div>
+                <div class="game-card-actions">
+                    <div class="challenge-someone-row">
+                        <select id="challengeUserSelect" class="challenge-select">
+                            <option value="">-- Pick a player --</option>
+                        </select>
+                        <button class="game-action-btn primary" onclick="sendTargetedChallenge()">Challenge!</button>
+                    </div>
+                    <button class="game-action-btn secondary" onclick="sendOpenChallenge()">📢 Open Challenge</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Modal (Ultimate Tic-Tac-Toe board) -->
+    <div class="game-modal-overlay" id="gameModal" role="dialog" aria-label="Ultimate Tic-Tac-Toe">
+        <div class="game-modal">
+            <div class="game-modal-header">
+                <div class="game-players-row">
+                    <span class="player-label x" id="playerXLabel">Player X</span>
+                    <span class="game-vs">vs</span>
+                    <span class="player-label o" id="playerOLabel">Player O</span>
+                </div>
+                <button class="game-modal-close" onclick="closeGameModal()">✕</button>
+            </div>
+            <div class="game-turn-status your-turn" id="gameTurnStatus">Your turn</div>
+            <div class="big-board" id="bigBoard"></div>
+            <div class="game-over-overlay" id="gameOverOverlay">
+                <div class="game-over-text" id="gameOverText">Game Over</div>
+                <button class="game-over-btn" onclick="gamePlayAgain()">🎮 Play Again</button>
+                <button class="game-over-btn secondary" onclick="closeGameModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="game-toast" id="gameToast"></div>
+
+    <script src="game-ttt.js"></script>
     <script src="app-cloudflare.js"></script>
 </body>
 </html>

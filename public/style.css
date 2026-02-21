@@ -1316,3 +1316,466 @@ header .header-subtitle {
   overflow: hidden;
   clip: rect(0,0,0,0);
 }
+
+/* ============================================================
+   GAME BUTTON (input bar)
+   ============================================================ */
+.game-btn {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.85;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.game-btn:hover { opacity: 1; transform: scale(1.15); }
+.game-btn:active { transform: scale(0.95); }
+
+/* ============================================================
+   GAME MENU (popup from 🎮 button)
+   ============================================================ */
+.game-menu-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+}
+.game-menu-overlay.show { display: block; }
+
+.game-menu {
+  position: fixed;
+  bottom: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, 96vw);
+  background: var(--color-white);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  z-index: 1001;
+  transition: bottom 0.35s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: var(--shadow-lg);
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+.game-menu.show { bottom: 0; }
+
+.game-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.game-menu-header h3 {
+  font-size: 1.1em;
+  color: var(--color-bg-dark);
+}
+.game-menu-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--color-gray);
+  padding: 4px 8px;
+}
+
+.game-menu-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Game card */
+.game-card {
+  background: var(--color-bg-dark);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  color: var(--color-white);
+}
+.game-card-title {
+  font-size: 1em;
+  font-weight: 700;
+  color: var(--color-accent);
+  margin-bottom: 4px;
+}
+.game-card-desc {
+  font-size: 0.82em;
+  opacity: 0.75;
+  margin-bottom: 14px;
+}
+.game-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.challenge-someone-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.challenge-select {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-size: 0.9em;
+  background: rgba(255,255,255,0.12);
+  color: var(--color-white);
+  cursor: pointer;
+  min-height: 44px;
+}
+.challenge-select option { background: var(--color-bg-dark); color: var(--color-white); }
+.game-action-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  min-height: 44px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.game-action-btn.primary {
+  background: var(--color-accent);
+  color: var(--color-bg-dark);
+}
+.game-action-btn.secondary {
+  background: rgba(255,255,255,0.12);
+  color: var(--color-white);
+  width: 100%;
+}
+.game-action-btn:hover { opacity: 0.85; transform: scale(1.02); }
+.game-action-btn:active { transform: scale(0.97); }
+
+/* ============================================================
+   GAME INVITE CARD (in chat)
+   ============================================================ */
+.game-invite-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, var(--color-bg-dark), var(--color-bg-mid));
+  color: var(--color-white);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin: 4px 0;
+  flex-wrap: wrap;
+  animation: slideInUp 0.3s ease;
+  box-shadow: var(--shadow-sm);
+}
+@keyframes slideInUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.game-invite-icon { font-size: 22px; flex-shrink: 0; }
+.game-invite-text { flex: 1; font-size: 0.9em; min-width: 0; }
+.game-invite-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.game-invite-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.82em;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 36px;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.game-invite-btn.accept { background: var(--color-accent); color: var(--color-bg-dark); }
+.game-invite-btn.decline { background: rgba(255,255,255,0.15); color: var(--color-white); }
+.game-invite-btn.cancel  { background: rgba(231,76,60,0.75); color: var(--color-white); }
+.game-invite-btn:hover { opacity: 0.85; transform: scale(1.04); }
+.game-invite-btn:active { transform: scale(0.96); }
+
+/* ============================================================
+   GAME MODAL (full-screen overlay)
+   ============================================================ */
+.game-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10,16,28,0.97);
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  overflow-y: auto;
+}
+.game-modal-overlay.show { display: flex; }
+
+.game-modal {
+  background: var(--color-bg-dark);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 520px;
+  max-height: 95dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 12px 20px;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 0 60px rgba(212,165,116,0.15);
+}
+
+.game-modal-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.game-players-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-label {
+  font-size: 0.95em;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 20px;
+  transition: box-shadow 0.3s ease, background 0.3s ease;
+  background: rgba(255,255,255,0.08);
+  color: var(--color-white);
+}
+.player-label.x { color: #e74c3c; }
+.player-label.o { color: #3498db; }
+.player-label.active {
+  box-shadow: 0 0 0 2px var(--color-accent), 0 0 16px rgba(212,165,116,0.4);
+  background: rgba(212,165,116,0.15);
+}
+
+.game-vs {
+  color: var(--color-gray);
+  font-size: 0.8em;
+}
+
+.game-modal-close {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: var(--color-white);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+.game-modal-close:hover { background: rgba(255,255,255,0.2); }
+
+/* Turn status */
+.game-turn-status {
+  font-size: 0.95em;
+  font-weight: 600;
+  padding: 6px 20px;
+  border-radius: 20px;
+  transition: color 0.3s, background 0.3s;
+}
+.game-turn-status.your-turn {
+  background: rgba(212,165,116,0.2);
+  color: var(--color-accent);
+  animation: pulse 1.5s infinite;
+}
+.game-turn-status.their-turn { color: rgba(255,255,255,0.5); background: transparent; }
+.game-turn-status.you-win    { color: var(--color-accent); background: rgba(212,165,116,0.2); }
+.game-turn-status.they-win   { color: rgba(255,255,255,0.6); background: transparent; }
+.game-turn-status.draw       { color: var(--color-gray); background: transparent; }
+
+/* ============================================================
+   BIG BOARD (3x3 grid of small boards)
+   ============================================================ */
+.big-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+  max-width: 480px;
+  padding: 4px;
+}
+
+.small-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 5px;
+  aspect-ratio: 1;
+  position: relative;
+  transition: box-shadow 0.2s ease;
+  overflow: hidden;
+}
+
+/* Won/drawn board overlay */
+.small-board.won {
+  background: rgba(255,255,255,0.04);
+}
+.small-board.drawn {
+  background: rgba(255,255,255,0.04);
+}
+
+.won-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2rem, 8vw, 4rem);
+  font-weight: 900;
+  z-index: 2;
+  border-radius: 8px;
+  animation: popIn 0.3s ease;
+}
+.small-board.won-x .won-overlay { color: #e74c3c; background: rgba(231,76,60,0.12); }
+.small-board.won-o .won-overlay { color: #3498db; background: rgba(52,152,219,0.12); }
+.won-overlay.draw { color: var(--color-gray); font-size: 2rem; background: rgba(127,140,141,0.1); }
+
+@keyframes popIn {
+  0%   { transform: scale(0.4); opacity: 0; }
+  70%  { transform: scale(1.1); }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* Cells */
+.ttt-cell {
+  aspect-ratio: 1;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  font-size: clamp(0.9rem, 3vw, 1.4rem);
+  font-weight: 900;
+  cursor: pointer;
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+  min-width: 44px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+  line-height: 1;
+}
+.ttt-cell:not(:disabled):hover {
+  background: rgba(212,165,116,0.25);
+  transform: scale(1.06);
+}
+.ttt-cell:not(:disabled):active {
+  transform: scale(0.94);
+}
+.ttt-cell:disabled { cursor: default; }
+.ttt-cell.cell-x { color: #e74c3c; }
+.ttt-cell.cell-o { color: #3498db; }
+
+/* ============================================================
+   GAME OVER OVERLAY
+   ============================================================ */
+.game-over-overlay {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  background: rgba(10,16,28,0.92);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 360px;
+  animation: fadeIn 0.3s ease;
+}
+.game-over-overlay.show { display: flex; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.game-over-text {
+  font-size: 1.8em;
+  font-weight: 900;
+  color: var(--color-accent);
+  text-align: center;
+}
+
+.game-over-btn {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 24px;
+  font-size: 1em;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  min-height: 48px;
+  width: 100%;
+  max-width: 240px;
+}
+.game-over-btn:not(.secondary) {
+  background: var(--color-accent);
+  color: var(--color-bg-dark);
+}
+.game-over-btn.secondary {
+  background: rgba(255,255,255,0.1);
+  color: var(--color-white);
+}
+.game-over-btn:hover { opacity: 0.85; transform: scale(1.02); }
+.game-over-btn:active { transform: scale(0.97); }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.game-toast {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--color-bg-dark);
+  color: var(--color-white);
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 0.9em;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3000;
+  white-space: nowrap;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(212,165,116,0.3);
+}
+.game-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================
+   RESPONSIVE GAME
+   ============================================================ */
+@media (max-width: 400px) {
+  .ttt-cell {
+    min-width: 0;
+    min-height: 0;
+    font-size: 0.75rem;
+  }
+  .big-board { gap: 4px; }
+  .small-board { gap: 2px; padding: 3px; }
+}
+
+@media (max-width: 767px) {
+  .game-modal { padding: 12px 8px 16px; }
+  .won-overlay { font-size: clamp(1.8rem, 9vw, 3.5rem); }
+}
