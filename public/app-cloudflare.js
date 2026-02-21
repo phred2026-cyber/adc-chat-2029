@@ -275,9 +275,16 @@ function connectWebSocket() {
         return;
     }
     
+    if (!accessToken) {
+        console.error('connectWebSocket: No access token available!');
+        logout();
+        return;
+    }
+    
     setStatus('connecting');
     
     const wsUrl = `wss://adc-chat-2029.phred2026.workers.dev/ws?token=${encodeURIComponent(accessToken)}`;
+    console.log('connectWebSocket: connecting to', wsUrl.substring(0, 80) + '...');
     
     ws = new WebSocket(wsUrl);
     
