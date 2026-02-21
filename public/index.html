@@ -91,7 +91,21 @@
                     <p><strong>Name:</strong> <span id="accountName">Loading...</span></p>
                     <p><strong>Email:</strong> <span id="accountEmail">Loading...</span></p>
                 </div>
+                <div class="change-name-section" id="changeNameSection" style="display:none;">
+                    <input type="text" id="changeNameInput" class="change-name-input" placeholder="New display name" maxlength="30">
+                    <div class="change-name-buttons">
+                        <button class="save-name-btn" id="saveNameBtn">✓ Save</button>
+                        <button class="cancel-name-btn" id="cancelNameBtn">✕ Cancel</button>
+                    </div>
+                    <div id="changeNameStatus" class="upload-status"></div>
+                </div>
+                <button class="change-name-btn" id="changeNameBtn">✏️ Change Name</button>
                 <button class="logout-btn" id="logoutBtn">🚪 Logout</button>
+            </div>
+
+            <div class="settings-section">
+                <h4>Members</h4>
+                <button class="members-btn" id="membersBtn">👥 View All Members</button>
             </div>
         </div>
     </div>
@@ -178,6 +192,30 @@
 
     <!-- Toast notification -->
     <div class="game-toast" id="gameToast"></div>
+
+    <!-- Profile card modal -->
+    <div class="profile-card-overlay" id="profileCardOverlay">
+        <div class="profile-card">
+            <button class="profile-card-close" id="profileCardClose">✕</button>
+            <div class="profile-card-avatar" id="profileCardAvatar"></div>
+            <div class="profile-card-name" id="profileCardName"></div>
+            <div class="profile-card-status" id="profileCardStatus"></div>
+            <div class="profile-card-email" id="profileCardEmail"></div>
+        </div>
+    </div>
+
+    <!-- Members list modal -->
+    <div class="members-overlay" id="membersOverlay">
+        <div class="members-panel">
+            <div class="members-header">
+                <h3>👥 Members</h3>
+                <button class="members-close" id="membersClose">✕</button>
+            </div>
+            <div class="members-list" id="membersList">
+                <div style="text-align:center;color:#888;padding:20px;">Loading...</div>
+            </div>
+        </div>
+    </div>
 
     <script src="game-ttt.js"></script>
     <script src="app-cloudflare.js"></script>

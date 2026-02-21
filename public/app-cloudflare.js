@@ -511,6 +511,192 @@ function logout() {
 if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
 // ============================================================
+// CHANGE NAME
+// ============================================================
+const changeNameBtn = document.getElementById('changeNameBtn');
+const changeNameSection = document.getElementById('changeNameSection');
+const changeNameInput = document.getElementById('changeNameInput');
+const saveNameBtn = document.getElementById('saveNameBtn');
+const cancelNameBtn = document.getElementById('cancelNameBtn');
+const changeNameStatus = document.getElementById('changeNameStatus');
+
+if (changeNameBtn) {
+    changeNameBtn.addEventListener('click', () => {
+        changeNameSection.style.display = 'block';
+        changeNameInput.value = currentUser?.username || '';
+        changeNameBtn.style.display = 'none';
+        changeNameStatus.textContent = '';
+        changeNameInput.focus();
+    });
+}
+if (cancelNameBtn) {
+    cancelNameBtn.addEventListener('click', () => {
+        changeNameSection.style.display = 'none';
+        changeNameBtn.style.display = 'block';
+    });
+}
+if (saveNameBtn) {
+    saveNameBtn.addEventListener('click', async () => {
+        const newName = changeNameInput.value.trim();
+        if (!newName || newName.length < 2) {
+            changeNameStatus.style.color = '#e74c3c';
+            changeNameStatus.textContent = 'Name must be at least 2 characters.';
+            return;
+        }
+        if (!/^[a-zA-Z0-9_\- ]+$/.test(newName)) {
+            changeNameStatus.style.color = '#e74c3c';
+            changeNameStatus.textContent = 'Only letters, numbers, spaces, hyphens, underscores.';
+            return;
+        }
+        saveNameBtn.disabled = true;
+        saveNameBtn.textContent = 'Saving...';
+        changeNameStatus.textContent = '';
+        try {
+            const res = await fetch(`${API_URL}/profile/update-name`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+                body: JSON.stringify({ username: newName }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                currentUser.username = data.username;
+                localStorage.setItem('user', JSON.stringify(currentUser));
+                if (accountName) accountName.textContent = data.username;
+                changeNameStatus.style.color = '#d4a574';
+                changeNameStatus.textContent = '✓ Name updated!';
+                setTimeout(() => {
+                    changeNameSection.style.display = 'none';
+                    changeNameBtn.style.display = 'block';
+                    changeNameStatus.textContent = '';
+                }, 1500);
+            } else {
+                changeNameStatus.style.color = '#e74c3c';
+                changeNameStatus.textContent = data.error || 'Failed to update name.';
+            }
+        } catch (err) {
+            changeNameStatus.style.color = '#e74c3c';
+            changeNameStatus.textContent = 'Network error. Try again.';
+        }
+        saveNameBtn.disabled = false;
+        saveNameBtn.textContent = '✓ Save';
+    });
+}
+
+// ============================================================
+// PROFILE CARD POPUP
+// ============================================================
+const profileCardOverlay = document.getElementById('profileCardOverlay');
+const profileCardClose = document.getElementById('profileCardClose');
+const profileCardAvatar = document.getElementById('profileCardAvatar');
+const profileCardName = document.getElementById('profileCardName');
+const profileCardStatus = document.getElementById('profileCardStatus');
+const profileCardEmail = document.getElementById('profileCardEmail');
+
+function showProfileCard(username, profileImageUrl) {
+    profileCardAvatar.innerHTML = '';
+    profileCardAvatar.style.background = getUserColor(username);
+    if (profileImageUrl) {
+        const img = document.createElement('img');
+        img.src = profileImageUrl;
+        img.alt = username;
+        profileCardAvatar.appendChild(img);
+    } else {
+        profileCardAvatar.textContent = getInitials(username);
+    }
+    profileCardName.textContent = username;
+    profileCardEmail.textContent = '';
+
+    // Online status
+    const isOnline = onlineUsers.some(u => u.username === username);
+    profileCardStatus.textContent = isOnline ? '🟢 Online' : '⚫ Offline';
+    profileCardStatus.className = 'profile-card-status ' + (isOnline ? 'online' : 'offline');
+
+    profileCardOverlay.classList.add('show');
+
+    // Fetch email from server
+    fetch(`${API_URL}/users/by-name?username=${encodeURIComponent(username)}`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => { if (data?.email) profileCardEmail.textContent = data.email; })
+    .catch(() => {});
+}
+
+if (profileCardClose) profileCardClose.addEventListener('click', () => profileCardOverlay.classList.remove('show'));
+if (profileCardOverlay) profileCardOverlay.addEventListener('click', e => { if (e.target === profileCardOverlay) profileCardOverlay.classList.remove('show'); });
+
+// ============================================================
+// MEMBERS LIST
+// ============================================================
+const membersBtn = document.getElementById('membersBtn');
+const membersOverlay = document.getElementById('membersOverlay');
+const membersClose = document.getElementById('membersClose');
+const membersList = document.getElementById('membersList');
+
+async function openMembersList() {
+    membersOverlay.classList.add('show');
+    membersList.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">Loading...</div>';
+
+    try {
+        const res = await fetch(`${API_URL}/users`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const data = res.ok ? await res.json() : null;
+        if (!data?.users?.length) {
+            membersList.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">No members yet.</div>';
+            return;
+        }
+
+        const onlineSet = new Set(onlineUsers.map(u => u.username));
+        const online = data.users.filter(u => onlineSet.has(u.username));
+        const offline = data.users.filter(u => !onlineSet.has(u.username));
+
+        let html = '';
+        if (online.length) {
+            html += `<div class="members-section-label">🟢 Online — ${online.length}</div>`;
+            for (const u of online) html += memberRowHTML(u, true);
+        }
+        if (offline.length) {
+            html += `<div class="members-section-label">⚫ Offline — ${offline.length}</div>`;
+            for (const u of offline) html += memberRowHTML(u, false);
+        }
+
+        membersList.innerHTML = html;
+
+        // Attach click handlers
+        membersList.querySelectorAll('.member-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const uname = row.dataset.username;
+                const pic = row.dataset.pic || null;
+                membersOverlay.classList.remove('show');
+                showProfileCard(uname, pic === 'null' ? null : pic);
+            });
+        });
+    } catch (err) {
+        membersList.innerHTML = '<div style="text-align:center;color:#e74c3c;padding:20px;">Failed to load members.</div>';
+    }
+}
+
+function memberRowHTML(user, isOnline) {
+    const color = getUserColor(user.username);
+    const initials = getInitials(user.username);
+    const avatarContent = user.profile_image_url
+        ? `<img src="${escapeHtml(user.profile_image_url)}" alt="${escapeHtml(user.username)}">`
+        : escapeHtml(initials);
+    return `<div class="member-row" data-username="${escapeHtml(user.username)}" data-pic="${escapeHtml(user.profile_image_url || 'null')}">
+        <div class="member-row-avatar ${isOnline ? 'online-border' : ''}" style="background:${color}">${avatarContent}</div>
+        <div class="member-row-info">
+            <div class="member-row-name">${escapeHtml(user.username)}</div>
+            <div class="member-row-status ${isOnline ? 'online' : 'offline'}">${isOnline ? 'Online' : 'Offline'}</div>
+        </div>
+    </div>`;
+}
+
+if (membersBtn) membersBtn.addEventListener('click', openMembersList);
+if (membersClose) membersClose.addEventListener('click', () => membersOverlay.classList.remove('show'));
+if (membersOverlay) membersOverlay.addEventListener('click', e => { if (e.target === membersOverlay) membersOverlay.classList.remove('show'); });
+
+// ============================================================
 // IMAGE CROPPER (settings)
 // ============================================================
 const CropperModal = (() => {
@@ -919,6 +1105,8 @@ function connectWebSocket() {
             } else if (data.type === 'online-users') {
                 onlineUsers = data.users || [];
                 if (typeof GameMenu !== 'undefined') GameMenu.updateOnlineUsers(onlineUsers);
+                // Refresh members list if it's open
+                if (membersOverlay && membersOverlay.classList.contains('show')) openMembersList();
             } else if (data.type === 'game-challenge') {
                 handleIncomingChallenge(data.challenge);
             } else if (data.type === 'game-challenge-accepted') {
@@ -1034,10 +1222,13 @@ function addMessage(msg, animate = true) {
     messageDiv.className = 'message' + (isOwn ? ' own-message' : '');
     messageDiv.dataset.messageId = msg.id;
 
-    // Avatar
+    // Avatar (clickable → profile card)
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
     avatar.style.background = getUserColor(msg.username);
+    avatar.style.cursor = 'pointer';
+    avatar.title = `View ${msg.username}'s profile`;
+    avatar.addEventListener('click', () => showProfileCard(msg.username, msg.profile_image_url));
 
     if (msg.profile_image_url) {
         const img = document.createElement('img');

@@ -279,14 +279,12 @@ export default {
 
         const magicToken = anyToken;
 
-        await env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?')
-          .bind(token).run();
-
         let user = await env.DB.prepare('SELECT * FROM users WHERE email = ?')
           .bind(magicToken.email).first();
 
         if (!user) {
           if (!username) {
+            // Don't mark token as used yet — user still needs to complete sign-up
             return new Response(JSON.stringify({ 
               needsUsername: true,
               email: magicToken.email 
@@ -305,7 +303,14 @@ export default {
             username: username,
             profile_image_url: profileImage || null,
           };
+
+          // Mark token used only after account is successfully created
+          await env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?')
+            .bind(token).run();
         } else {
+          // Existing user — mark token used and update last login
+          await env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?')
+            .bind(token).run();
           await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')
             .bind(Date.now(), user.id).run();
         }
@@ -477,6 +482,79 @@ export default {
           success: true,
           profile_image_url: image,
         }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update username
+      if (path === '/profile/update-name' && request.method === 'POST') {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJWT(token, env);
+        if (!payload || payload.type !== 'access') {
+          return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const { username } = await request.json();
+        if (!username || username.trim().length < 2 || username.trim().length > 30) {
+          return new Response(JSON.stringify({ error: 'Name must be 2–30 characters' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        if (!/^[a-zA-Z0-9_\- ]+$/.test(username.trim())) {
+          return new Response(JSON.stringify({ error: 'Only letters, numbers, spaces, hyphens, underscores' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const newName = username.trim();
+        await env.DB.prepare('UPDATE users SET username = ? WHERE id = ?').bind(newName, payload.userId).run();
+        return new Response(JSON.stringify({ success: true, username: newName }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get user info by username (for profile card)
+      if (path === '/users/by-name' && request.method === 'GET') {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJWT(token, env);
+        if (!payload || payload.type !== 'access') {
+          return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const queryUsername = url.searchParams.get('username');
+        if (!queryUsername) {
+          return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const userRow = await env.DB.prepare(
+          'SELECT id, username, email, profile_image_url FROM users WHERE username = ?'
+        ).bind(queryUsername).first();
+        if (!userRow) {
+          return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({
+          id: userRow.id,
+          username: userRow.username,
+          email: userRow.email,
+          profile_image_url: userRow.profile_image_url,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // Get all users (for user list panel)
+      if (path === '/users' && request.method === 'GET') {
+        const authHeader = request.headers.get('Authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const token = authHeader.substring(7);
+        const payload = await verifyJWT(token, env);
+        if (!payload || payload.type !== 'access') {
+          return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const allUsers = await env.DB.prepare(
+          'SELECT id, username, email, profile_image_url FROM users ORDER BY username ASC'
+        ).all();
+        return new Response(JSON.stringify({ users: allUsers.results }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
