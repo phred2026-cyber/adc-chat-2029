@@ -1,0 +1,21 @@
+{
+  "name": "adc-chat-2029-auth",
+  "version": "2.0.0",
+  "description": "Real-time chat app for ADC Class of 2029 with authentication",
+  "main": "workers/index-auth.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler-auth.toml",
+    "deploy": "wrangler deploy --config wrangler-auth.toml",
+    "db:create": "wrangler d1 create adc-chat-2029-db",
+    "db:init": "wrangler d1 execute adc-chat-2029-db --file=schema.sql",
+    "db:init:local": "wrangler d1 execute adc-chat-2029-db --local --file=schema.sql",
+    "pages:deploy": "wrangler pages deploy public --project-name=adc-chat-2029-auth"
+  },
+  "dependencies": {
+    "jose": "^5.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

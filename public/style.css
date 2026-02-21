@@ -30,6 +30,7 @@ header {
     color: white;
     padding: 20px;
     text-align: center;
+    position: relative;
 }
 
 header h1 {
@@ -103,16 +104,6 @@ header p {
     border-top: 1px solid #e0e0e0;
 }
 
-#nameInput {
-    flex: 0 0 150px;
-    padding: 12px;
-    border: 2px solid #e0e0e0;
-    border-radius: 10px;
-    font-size: 1em;
-    outline: none;
-    transition: border-color 0.3s;
-}
-
 #messageInput {
     flex: 1;
     padding: 12px;
@@ -123,7 +114,6 @@ header p {
     transition: border-color 0.3s;
 }
 
-#nameInput:focus,
 #messageInput:focus {
     border-color: #667eea;
 }
@@ -179,15 +169,23 @@ header p {
         flex-wrap: wrap;
     }
     
-    #nameInput {
-        flex: 1 1 100%;
-    }
-    
     #messageInput {
         flex: 1 1 calc(100% - 90px);
     }
     
     #sendBtn {
         flex: 0 0 80px;
+    }
+    
+    .settings-panel {
+        width: calc(100% - 40px);
+        left: 20px;
+        right: 20px;
+    }
+    
+    .status-indicator {
+        position: static;
+        margin: 10px auto 0;
+        width: fit-content;
     }
 }

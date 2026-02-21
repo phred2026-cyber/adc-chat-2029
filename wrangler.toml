@@ -1,7 +1,14 @@
 name = "adc-chat-2029"
-main = "workers/index.js"
+main = "workers/unified-index.js"
 compatibility_date = "2024-01-01"
 
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "adc-chat-2029-db"
+database_id = "placeholder-will-be-set-after-creation"
+
+# Durable Objects binding
 [[durable_objects.bindings]]
 name = "CHAT_ROOM"
 class_name = "ChatRoom"
@@ -9,3 +16,12 @@ class_name = "ChatRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChatRoom"]
+
+# Environment variables
+[vars]
+APP_URL = "https://adc-chat-2029.pages.dev"
+
+# Secrets (set using: wrangler secret put SECRET_NAME)
+# JWT_SECRET = "set-via-wrangler-secret-put"
+# RESEND_API_KEY = "set-via-wrangler-secret-put" (optional)
+# FROM_EMAIL = "ADC Chat <noreply@yourdomain.com>" (optional)

@@ -1,4 +1,4 @@
-// Authenticated Chat Frontend for Cloudflare
+// Authenticated Chat Frontend Logic
 
 const API_URL = window.location.origin;
 let ws = null;
@@ -8,17 +8,12 @@ let accessToken = null;
 let refreshToken = null;
 
 // DOM Elements
-const messagesContainer = document.getElementById('messages');
+const messagesDiv = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
-const statusDot = document.getElementById('statusDot');
-const statusText = document.getElementById('statusText');
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsPanel = document.getElementById('settingsPanel');
-const settingsOverlay = document.getElementById('settingsOverlay');
+const statusSpan = document.getElementById('status');
+const currentUsername = document.getElementById('currentUsername');
 const logoutBtn = document.getElementById('logoutBtn');
-const accountName = document.getElementById('accountName');
-const accountEmail = document.getElementById('accountEmail');
 
 // Check authentication on page load
 async function checkAuth() {
@@ -33,10 +28,7 @@ async function checkAuth() {
     }
     
     currentUser = JSON.parse(userJson);
-    
-    // Update settings panel
-    accountName.textContent = currentUser.username;
-    accountEmail.textContent = currentUser.email;
+    currentUsername.textContent = currentUser.username;
     
     // Verify token is still valid
     try {
@@ -105,46 +97,14 @@ function logout() {
     window.location.href = '/auth.html';
 }
 
-// Settings panel toggle
-settingsBtn.addEventListener('click', () => {
-    settingsPanel.classList.toggle('show');
-    settingsOverlay.classList.toggle('show');
-});
-
-settingsOverlay.addEventListener('click', () => {
-    settingsPanel.classList.remove('show');
-    settingsOverlay.classList.remove('show');
-});
-
 // Logout button
 logoutBtn.addEventListener('click', logout);
-
-// Update status indicator
-function setStatus(status) {
-    statusDot.className = 'status-dot';
-    
-    switch(status) {
-        case 'connected':
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
-            break;
-        case 'connecting':
-            statusDot.classList.add('connecting');
-            statusText.textContent = 'Connecting...';
-            break;
-        case 'disconnected':
-            statusText.textContent = 'Disconnected';
-            break;
-    }
-}
 
 // Connect to WebSocket
 function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         return;
     }
-    
-    setStatus('connecting');
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(accessToken)}`;
@@ -153,7 +113,8 @@ function connectWebSocket() {
     
     ws.onopen = () => {
         console.log('WebSocket connected');
-        setStatus('connected');
+        statusSpan.textContent = 'Connected';
+        statusSpan.style.color = '#27ae60';
         
         if (reconnectTimeout) {
             clearTimeout(reconnectTimeout);
@@ -162,30 +123,28 @@ function connectWebSocket() {
     };
     
     ws.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'previous-messages') {
-                // Load previous messages
-                data.messages.forEach(msg => addMessage(msg));
-            } else if (data.type === 'chat-message') {
-                addMessage(data.message);
-            } else if (data.type === 'system-message') {
-                addSystemMessage(data.text);
-            }
-        } catch (err) {
-            console.error('Error parsing message:', err);
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'previous-messages') {
+            // Load previous messages
+            data.messages.forEach(msg => addMessage(msg));
+        } else if (data.type === 'chat-message') {
+            addMessage(data.message);
+        } else if (data.type === 'system-message') {
+            addSystemMessage(data.text);
         }
     };
     
     ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        setStatus('disconnected');
+        statusSpan.textContent = 'Connection error';
+        statusSpan.style.color = '#e74c3c';
     };
     
     ws.onclose = () => {
         console.log('WebSocket disconnected');
-        setStatus('disconnected');
+        statusSpan.textContent = 'Disconnected';
+        statusSpan.style.color = '#95a5a6';
         
         // Try to reconnect after 3 seconds
         reconnectTimeout = setTimeout(async () => {
@@ -205,52 +164,44 @@ function addMessage(msg) {
     
     const isOwnMessage = msg.username === currentUser.username;
     if (isOwnMessage) {
-        messageDiv.style.background = '#e3f2fd';
-        messageDiv.style.borderLeft = '3px solid #2196f3';
+        messageDiv.classList.add('own-message');
     }
     
-    messageDiv.innerHTML = `
-        <div class="message-header">
-            <span class="message-name">${escapeHtml(msg.username)}</span>
-            <span class="message-time">${msg.timestamp}</span>
-        </div>
-        <div class="message-text">${escapeHtml(msg.text)}</div>
-    `;
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'message-name';
+    nameSpan.textContent = msg.username;
     
-    messagesContainer.appendChild(messageDiv);
+    const textSpan = document.createElement('span');
+    textSpan.className = 'message-text';
+    textSpan.textContent = msg.text;
     
-    // Auto-scroll to bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'message-time';
+    timeSpan.textContent = msg.timestamp;
+    
+    messageDiv.appendChild(nameSpan);
+    messageDiv.appendChild(textSpan);
+    messageDiv.appendChild(timeSpan);
+    
+    messagesDiv.appendChild(messageDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
 // Add system message
 function addSystemMessage(text) {
     const messageDiv = document.createElement('div');
-    messageDiv.style.textAlign = 'center';
-    messageDiv.style.color = '#95a5a6';
-    messageDiv.style.fontSize = '12px';
-    messageDiv.style.margin = '10px 0';
-    messageDiv.style.fontStyle = 'italic';
+    messageDiv.className = 'system-message';
     messageDiv.textContent = text;
     
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Escape HTML to prevent XSS
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    messagesDiv.appendChild(messageDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
 // Send message
 function sendMessage() {
     const text = messageInput.value.trim();
     
-    if (!text) {
-        return;
-    }
+    if (!text) return;
     
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -260,8 +211,7 @@ function sendMessage() {
         
         messageInput.value = '';
     } else {
-        alert('Not connected to chat server. Reconnecting...');
-        connectWebSocket();
+        alert('Not connected to chat server');
     }
 }
 
@@ -279,11 +229,6 @@ messageInput.addEventListener('keypress', (e) => {
 setInterval(async () => {
     await refreshAccessToken();
 }, 10 * 60 * 1000);
-
-// Focus message input on load
-window.addEventListener('load', () => {
-    messageInput.focus();
-});
 
 // Initialize
 (async () => {
