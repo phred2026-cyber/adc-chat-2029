@@ -1,6 +1,6 @@
 // Authenticated Chat Frontend for Cloudflare
 
-const API_URL = window.location.origin;
+const API_URL = 'https://adc-chat-2029.phred2026.workers.dev';
 let ws = null;
 let reconnectTimeout = null;
 let currentUser = null;

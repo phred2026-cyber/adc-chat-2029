@@ -75,6 +75,25 @@
             cursor: not-allowed;
         }
         
+        .btn-secondary {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            color: #3498db;
+            border: 1px solid #3498db;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        
+        .btn-secondary:hover {
+            background: #3498db;
+            color: white;
+        }
+        
         .status-message {
             padding: 12px;
             border-radius: 5px;
@@ -140,22 +159,58 @@
         .dev-link a:hover {
             text-decoration: underline;
         }
+        
+        .mode-toggle {
+            text-align: center;
+            margin-top: 15px;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        .mode-toggle a {
+            color: #3498db;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        
+        .mode-toggle a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
     <div class="auth-container">
         <h1 class="auth-title">🎓 ADC 2029</h1>
-        <p class="auth-subtitle">Sign in to join the chat</p>
+        <p class="auth-subtitle" id="modeSubtitle">Sign in to join the chat</p>
         
         <div id="statusMessage" class="status-message hidden"></div>
         
-        <!-- Email Request Form -->
-        <div id="emailForm">
+        <!-- Sign In Form -->
+        <div id="signInForm">
             <div class="form-group">
-                <label for="email">Email Address</label>
-                <input type="email" id="email" placeholder="your.email@example.com" required>
+                <label for="signInEmail">Email Address</label>
+                <input type="email" id="signInEmail" placeholder="your.email@example.com" required>
             </div>
-            <button id="requestBtn" class="btn-primary">Send Magic Link</button>
+            <button id="signInBtn" class="btn-primary">Send Magic Link</button>
+            <div class="mode-toggle">
+                No account? <a id="showSignUp">Sign up here</a>
+            </div>
+        </div>
+        
+        <!-- Sign Up Form -->
+        <div id="signUpForm" class="hidden">
+            <div class="form-group">
+                <label for="signUpName">Your Name</label>
+                <input type="text" id="signUpName" placeholder="John Doe" required maxlength="30">
+            </div>
+            <div class="form-group">
+                <label for="signUpEmail">Email Address</label>
+                <input type="email" id="signUpEmail" placeholder="your.email@example.com" required>
+            </div>
+            <button id="signUpBtn" class="btn-primary">Create Account & Send Link</button>
+            <div class="mode-toggle">
+                Already have an account? <a id="showSignIn">Sign in here</a>
+            </div>
         </div>
         
         <!-- Magic Link Sent -->
@@ -170,7 +225,7 @@
             </div>
         </div>
         
-        <!-- Username Setup (for new users) -->
+        <!-- Username Setup (for new users from old flow) -->
         <div id="usernameForm" class="hidden">
             <p class="auth-subtitle">Welcome! Choose a username:</p>
             <div class="form-group">
