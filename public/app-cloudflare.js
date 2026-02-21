@@ -728,20 +728,31 @@ if (profileAvatar) {
 if (profileImageInput) {
     profileImageInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
+        console.log('File selected:', file ? file.name : 'none', file ? file.type : '');
         if (!file) return;
 
         if (!file.type.startsWith('image/')) {
-            uploadStatus.textContent = 'Please select an image file';
-            uploadStatus.className = 'upload-status error';
+            if (uploadStatus) { uploadStatus.textContent = 'Please select an image file'; uploadStatus.className = 'upload-status error'; }
             return;
         }
 
         const reader = new FileReader();
         reader.onload = (ev) => {
-            CropperModal.open(ev.target.result, async (croppedBase64) => {
-                await uploadProfileImage(croppedBase64);
-            });
+            console.log('Image loaded, size:', Math.round(ev.target.result.length / 1024), 'KB');
+            // Try cropper first, fall back to direct compress+upload
+            if (CropperModal && document.getElementById('cropperModal')) {
+                console.log('Opening cropper...');
+                CropperModal.open(ev.target.result, async (croppedBase64) => {
+                    console.log('Cropper saved, uploading...');
+                    await uploadProfileImage(croppedBase64);
+                });
+            } else {
+                // Fallback: compress and upload directly without cropper
+                console.log('No cropper found, uploading directly...');
+                uploadProfileImage(ev.target.result);
+            }
         };
+        reader.onerror = (err) => console.error('FileReader error:', err);
         reader.readAsDataURL(file);
         profileImageInput.value = '';
     });
