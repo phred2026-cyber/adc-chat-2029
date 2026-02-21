@@ -177,7 +177,7 @@ async function sendMagicLinkEmail(email, token, env) {
               Sign In to Chat
             </a>
             <p style="color: #7f8c8d; font-size: 14px;">
-              This link expires in 15 minutes. If you didn't request this, you can safely ignore this email.
+              This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
             </p>
             <p style="color: #7f8c8d; font-size: 12px;">
               Or copy and paste this link: <br/>
@@ -251,16 +251,33 @@ export default {
       if (path === '/auth/verify' && request.method === 'POST') {
         const { token, username, profileImage } = await request.json();
 
-        const magicToken = await env.DB.prepare(
-          'SELECT * FROM magic_tokens WHERE token = ? AND used = 0 AND expires_at > ?'
-        ).bind(token, Date.now()).first();
+        // Check token exists at all
+        const anyToken = await env.DB.prepare(
+          'SELECT * FROM magic_tokens WHERE token = ?'
+        ).bind(token).first();
 
-        if (!magicToken) {
-          return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        if (!anyToken) {
+          return new Response(JSON.stringify({ error: 'Invalid link. Please request a new magic link.' }), {
             status: 401,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+
+        if (anyToken.used) {
+          return new Response(JSON.stringify({ error: 'This link has already been used. Please request a new magic link.' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (anyToken.expires_at <= Date.now()) {
+          return new Response(JSON.stringify({ error: 'This link has expired (links are valid for 1 hour). Please request a new magic link.' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const magicToken = anyToken;
 
         await env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?')
           .bind(token).run();

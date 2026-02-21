@@ -937,6 +937,10 @@ function connectWebSocket() {
                     pendingChallenges.delete(data.challengeId);
                 }
             } else if (data.type === 'game-started') {
+                // Clean up any own challenge cards
+                for (const [key, card] of pendingChallenges) {
+                    if (key.startsWith('own_')) { card.remove(); pendingChallenges.delete(key); }
+                }
                 if (typeof UltimateTTT !== 'undefined') {
                     UltimateTTT.init(ws);
                     UltimateTTT.startGame(data.gameState, data.yourSymbol);
@@ -1154,7 +1158,10 @@ messageInput.addEventListener('keydown', (e) => {
 // ============================================================
 
 function handleIncomingChallenge(challenge) {
-    const isForMe = !challenge.targetUserId || (currentUser && challenge.targetUserId == currentUser.id);
+    // Open challenges: show to everyone (server already excluded challenger)
+    // Targeted challenges: only show to the target user (server already filtered)
+    // So we just display whatever arrives
+    const isForMe = true;
     if (!isForMe) return;
 
     removeEmptyState();
@@ -1167,7 +1174,8 @@ function handleIncomingChallenge(challenge) {
         ? `${escapeHtml(challenge.challengerName)} challenged you to ${escapeHtml(challenge.gameName)}!`
         : `${escapeHtml(challenge.challengerName)} wants to play ${escapeHtml(challenge.gameName)}!`;
 
-    const isOwnChallenge = currentUser && challenge.challengerId == currentUser.id;
+    // We receive this only when we're not the challenger (server excludes the sender)
+    const isOwnChallenge = false;
 
     card.innerHTML = `
         <span class="game-invite-icon">🎮</span>
@@ -1238,12 +1246,42 @@ function closeGameMenu() {
 
 function sendOpenChallenge() {
     if (typeof GameMenu !== 'undefined') GameMenu.sendChallenge(null);
+    // Show a local "cancel" card for the challenger
+    showOwnChallengeCard(null, 'Ultimate Tic-Tac-Toe', '_pending_');
 }
 
 function sendTargetedChallenge() {
     const select = document.getElementById('challengeUserSelect');
     if (!select || !select.value) { showToast('Pick a player first!'); return; }
+    const targetName = select.options[select.selectedIndex]?.text || '';
     if (typeof GameMenu !== 'undefined') GameMenu.sendChallenge(select.value);
+    showOwnChallengeCard(targetName, 'Ultimate Tic-Tac-Toe', '_pending_');
+}
+
+function showOwnChallengeCard(targetName, gameName, challengeId) {
+    removeEmptyState();
+    const card = document.createElement('div');
+    card.className = 'game-invite-card';
+    card.dataset.challengeId = challengeId;
+
+    const msg = targetName
+        ? `You challenged ${escapeHtml(targetName)} to ${escapeHtml(gameName)}!`
+        : `You issued an Open Challenge for ${escapeHtml(gameName)}!`;
+
+    card.innerHTML = `
+        <span class="game-invite-icon">🎮</span>
+        <span class="game-invite-text">${msg}</span>
+        <div class="game-invite-actions">
+            <span class="game-invite-pending">Waiting...</span>
+        </div>
+    `;
+    messagesContainer.appendChild(card);
+    // We use a special key to store this — actual challengeId comes in from server event
+    // For simplicity store with a timestamp key that we'll clean up when game starts/declines
+    const key = 'own_' + Date.now();
+    card.dataset.ownKey = key;
+    pendingChallenges.set(key, card);
+    scrollToBottom(true);
 }
 
 function closeGameModal() {
