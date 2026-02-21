@@ -146,8 +146,7 @@ function connectWebSocket() {
     
     setStatus('connecting');
     
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(accessToken)}`;
+    const wsUrl = `wss://adc-chat-2029.phred2026.workers.dev/ws?token=${encodeURIComponent(accessToken)}`;
     
     ws = new WebSocket(wsUrl);
     
