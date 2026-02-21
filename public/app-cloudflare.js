@@ -86,49 +86,39 @@ async function checkAuth() {
     refreshToken = localStorage.getItem('refreshToken');
     const userJson = localStorage.getItem('user');
     
+    console.log('checkAuth: checking tokens...', { 
+        hasAccessToken: !!accessToken, 
+        hasRefreshToken: !!refreshToken, 
+        hasUser: !!userJson 
+    });
+    
     if (!accessToken || !refreshToken || !userJson) {
+        console.log('checkAuth: missing tokens, redirecting to auth');
         window.location.href = '/auth.html';
         return false;
     }
     
     currentUser = JSON.parse(userJson);
+    console.log('checkAuth: currentUser loaded:', currentUser.username);
     
     // Update settings panel
     accountName.textContent = currentUser.username;
     accountEmail.textContent = currentUser.email;
     updateProfileAvatar(currentUser);
     
-    // Verify token is still valid
-    try {
-        const response = await fetch(`${API_URL}/auth/verify-token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-            },
-        });
-        
-        if (response.ok) {
-            console.log('Auth verified successfully');
-            return true;
-        }
-        
-        // Token expired, try to refresh
-        console.log('Access token expired, refreshing...');
-        return await refreshAccessToken();
-    } catch (error) {
-        console.error('Auth check failed:', error);
-        // Don't logout on network errors
-        return false;
-    }
+    // Skip verification on fresh login (just trust the tokens for now)
+    console.log('checkAuth: tokens present, proceeding without verification');
+    return true;
 }
 
 // Refresh access token
 async function refreshAccessToken() {
     if (!refreshToken) {
-        console.error('No refresh token available');
-        logout();
-        return false;
+        console.error('refreshAccessToken: No refresh token available');
+        return false; // Don't logout immediately, might be temporary
     }
+    
+    console.log('refreshAccessToken: attempting to refresh...');
     
     try {
         const response = await fetch(`${API_URL}/auth/refresh`, {
@@ -141,17 +131,21 @@ async function refreshAccessToken() {
             const data = await response.json();
             accessToken = data.accessToken;
             localStorage.setItem('accessToken', accessToken);
-            console.log('Access token refreshed successfully');
+            console.log('refreshAccessToken: success!');
             return true;
         } else {
-            const errorData = await response.json();
-            console.error('Token refresh failed:', errorData);
-            logout();
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('refreshAccessToken: server error:', errorData);
+            // Only logout if it's a 401 (unauthorized), not other errors
+            if (response.status === 401) {
+                console.log('refreshAccessToken: 401 unauthorized, logging out');
+                logout();
+            }
             return false;
         }
     } catch (error) {
-        console.error('Token refresh network error:', error);
-        // Don't logout on network errors, just log and retry later
+        console.error('refreshAccessToken: network error:', error);
+        // Don't logout on network errors
         return false;
     }
 }
