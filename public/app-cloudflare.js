@@ -616,17 +616,26 @@ const CropperModal = (() => {
     }
 
     function getCroppedBase64() {
-        const oc = document.createElement('canvas');
-        oc.width = 256; oc.height = 256;
-        const oCtx = oc.getContext('2d');
-        oCtx.beginPath();
-        oCtx.arc(128, 128, 128, 0, Math.PI * 2);
-        oCtx.clip();
-        const cx = viewW / 2 - circleR;
-        const cy = viewH / 2 - circleR;
-        const cs = circleR * 2;
-        oCtx.drawImage(image, (cx - imgX) / scale, (cy - imgY) / scale, cs / scale, cs / scale, 0, 0, 256, 256);
-        return oc.toDataURL('image/jpeg', 0.88);
+        try {
+            const oc = document.createElement('canvas');
+            oc.width = 256; oc.height = 256;
+            const oCtx = oc.getContext('2d');
+            oCtx.beginPath();
+            oCtx.arc(128, 128, 128, 0, Math.PI * 2);
+            oCtx.clip();
+            // If circleR is 0 (setup failed), use a fallback crop from center
+            const r = circleR > 0 ? circleR : Math.min(viewW, viewH) / 2 * 0.7;
+            const cx = viewW / 2 - r;
+            const cy = viewH / 2 - r;
+            const cs = r * 2;
+            oCtx.drawImage(image, (cx - imgX) / scale, (cy - imgY) / scale, cs / scale, cs / scale, 0, 0, 256, 256);
+            const result = oc.toDataURL('image/jpeg', 0.88);
+            console.log('getCroppedBase64 success, circleR:', circleR, 'result size:', Math.round(result.length/1024)+'KB');
+            return result;
+        } catch (err) {
+            console.error('getCroppedBase64 failed:', err);
+            return null;
+        }
     }
 
     function applyZoom(factor, ox, oy) {
@@ -706,9 +715,17 @@ const CropperModal = (() => {
     if (closeBtn) closeBtn.addEventListener('click', close);
     if (cancelBtn) cancelBtn.addEventListener('click', close);
     if (saveBtn) saveBtn.addEventListener('click', () => {
+        console.log('Cropper save clicked');
         const b64 = getCroppedBase64();
+        console.log('Cropped image size:', b64 ? Math.round(b64.length / 1024) + 'KB' : 'NULL!');
+        const cb = onSaveCallback; // capture before close() clears it
         close();
-        if (onSaveCallback) onSaveCallback(b64);
+        if (cb && b64) {
+            console.log('Calling upload callback...');
+            cb(b64);
+        } else {
+            console.error('Save failed: callback=', !!cb, 'b64=', !!b64);
+        }
     });
 
     return { open, close };
