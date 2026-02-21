@@ -25,9 +25,6 @@ const showSignIn = document.getElementById('showSignIn');
 
 // Shared elements
 const sentEmail = document.getElementById('sentEmail');
-const devLinkContainer = document.getElementById('devLinkContainer');
-const devLink = document.getElementById('devLink');
-
 const usernameInput = document.getElementById('username');
 const createAccountBtn = document.getElementById('createAccountBtn');
 
@@ -85,12 +82,6 @@ signInBtn.addEventListener('click', async () => {
             signInForm.classList.add('hidden');
             linkSent.classList.remove('hidden');
             sentEmail.textContent = email;
-            
-            // Show dev link if available (development mode)
-            if (data.magicLink) {
-                devLinkContainer.classList.remove('hidden');
-                devLink.href = data.magicLink;
-            }
         } else {
             showStatus(data.error || 'Failed to send magic link', 'error');
             signInBtn.disabled = false;
@@ -139,12 +130,6 @@ signUpBtn.addEventListener('click', async () => {
             signUpForm.classList.add('hidden');
             linkSent.classList.remove('hidden');
             sentEmail.textContent = email;
-            
-            // Show dev link if available (development mode)
-            if (data.magicLink) {
-                devLinkContainer.classList.remove('hidden');
-                devLink.href = data.magicLink;
-            }
         } else {
             showStatus(data.error || 'Failed to create account', 'error');
             signUpBtn.disabled = false;
