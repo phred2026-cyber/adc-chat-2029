@@ -555,9 +555,13 @@ export class ChatRoom {
       console.error('Error cleaning up old messages:', err);
     }
     
-    // Get last 100 messages with profile images
+    // Get last 100 messages, JOIN with users to always get latest profile pic
     const messages = await this.env.DB.prepare(
-      'SELECT id, user_id, username, text, timestamp, profile_image_url, created_at FROM messages ORDER BY created_at DESC LIMIT 100'
+      `SELECT m.id, m.user_id, m.username, m.text, m.timestamp, m.created_at,
+              COALESCE(u.profile_image_url, m.profile_image_url) as profile_image_url
+       FROM messages m
+       LEFT JOIN users u ON m.user_id = u.id
+       ORDER BY m.created_at DESC LIMIT 100`
     ).all();
     
     websocket.send(JSON.stringify({
@@ -585,9 +589,15 @@ export class ChatRoom {
           const now = Date.now();
           const timestamp = formatTimestamp(now);
           
+          // Always fetch latest profile pic from DB (not JWT - JWT may be stale)
+          const userRow = await this.env.DB.prepare(
+            'SELECT profile_image_url FROM users WHERE id = ?'
+          ).bind(user.userId).first();
+          const latestProfilePic = userRow ? userRow.profile_image_url : user.profileImageUrl;
+
           const result = await this.env.DB.prepare(
             'INSERT INTO messages (user_id, username, text, profile_image_url, timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-          ).bind(user.userId, user.username, data.text, user.profileImageUrl, timestamp, now).run();
+          ).bind(user.userId, user.username, data.text, latestProfilePic, timestamp, now).run();
           
           const message = {
             id: result.meta.last_row_id,
@@ -595,7 +605,7 @@ export class ChatRoom {
             username: user.username,
             text: data.text,
             timestamp: timestamp,
-            profile_image_url: user.profileImageUrl,
+            profile_image_url: latestProfilePic,
           };
           
           this.broadcast({
