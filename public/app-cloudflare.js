@@ -30,6 +30,9 @@ const uploadImageBtn = document.getElementById('uploadImageBtn');
 const uploadStatus = document.getElementById('uploadStatus');
 const typingIndicator = document.getElementById('typingIndicator');
 
+// Delete confirmation state
+let deleteMessageId = null;
+
 // Format timestamp to Colorado time (America/Denver) in 24-hour format
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
@@ -308,6 +311,8 @@ function connectWebSocket() {
                 handleTypingStart(data.username);
             } else if (data.type === 'typing-stop') {
                 handleTypingStop(data.username);
+            } else if (data.type === 'message-deleted') {
+                removeMessage(data.messageId);
             }
         } catch (err) {
             console.error('Error parsing message:', err);
@@ -394,6 +399,7 @@ function updateTypingIndicator() {
 function addMessage(msg) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
+    messageDiv.dataset.messageId = msg.id;
     
     const isOwnMessage = msg.username === currentUser.username;
     if (isOwnMessage) {
@@ -418,7 +424,8 @@ function addMessage(msg) {
     // Create message content
     const content = document.createElement('div');
     content.className = 'message-content';
-    content.innerHTML = `
+    
+    const headerHtml = `
         <div class="message-header">
             <span class="message-name">${escapeHtml(msg.username)}</span>
             <span class="message-time">${msg.timestamp}</span>
@@ -426,12 +433,58 @@ function addMessage(msg) {
         <div class="message-text">${escapeHtml(msg.text)}</div>
     `;
     
+    // Add delete button for own messages
+    const actionsHtml = isOwnMessage ? `
+        <div class="message-actions">
+            <button class="delete-btn" onclick="confirmDeleteMessage(${msg.id})">
+                🗑️ Delete
+            </button>
+        </div>
+    ` : '';
+    
+    content.innerHTML = headerHtml + actionsHtml;
+    
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(content);
     messagesContainer.appendChild(messageDiv);
     
     // Auto-scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Remove message from chat
+function removeMessage(messageId) {
+    const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageDiv) {
+        messageDiv.style.transition = 'opacity 0.3s';
+        messageDiv.style.opacity = '0';
+        setTimeout(() => {
+            messageDiv.remove();
+        }, 300);
+    }
+}
+
+// Confirm delete message
+function confirmDeleteMessage(messageId) {
+    deleteMessageId = messageId;
+    document.getElementById('deleteModal').classList.add('show');
+}
+
+// Cancel delete
+function cancelDelete() {
+    deleteMessageId = null;
+    document.getElementById('deleteModal').classList.remove('show');
+}
+
+// Confirm and delete message
+function confirmDelete() {
+    if (deleteMessageId && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'delete-message',
+            messageId: deleteMessageId,
+        }));
+        cancelDelete();
+    }
 }
 
 // Add system message

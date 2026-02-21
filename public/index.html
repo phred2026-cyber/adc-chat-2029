@@ -192,6 +192,7 @@
         
         <div class="chat-container">
             <div id="messages" class="messages"></div>
+            <div class="typing-indicator" id="typingIndicator" style="display: none;"></div>
         </div>
         
         <div class="input-container">
@@ -219,12 +220,37 @@
         </div>
         <div class="settings-content">
             <div class="settings-section">
+                <h4>Profile</h4>
+                <div class="profile-image-section">
+                    <div class="profile-avatar" id="profileAvatar">
+                        <span id="profileInitials">?</span>
+                        <img id="profileImage" style="display: none;" alt="Profile">
+                    </div>
+                    <button class="image-upload-btn" id="uploadImageBtn">Change Photo</button>
+                    <input type="file" id="profileImageInput" accept="image/*">
+                    <div class="upload-status" id="uploadStatus"></div>
+                </div>
+            </div>
+            
+            <div class="settings-section">
                 <h4>Account</h4>
                 <div class="account-info">
                     <p><strong>Name:</strong> <span id="accountName">Loading...</span></p>
                     <p><strong>Email:</strong> <span id="accountEmail">Loading...</span></p>
                 </div>
                 <button class="logout-btn" id="logoutBtn">Logout</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete confirmation modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal">
+            <h3>Delete Message?</h3>
+            <p>Are you sure you want to delete this message? This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="cancelDelete()">Cancel</button>
+                <button class="modal-btn confirm" onclick="confirmDelete()">Delete</button>
             </div>
         </div>
     </div>

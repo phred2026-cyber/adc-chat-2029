@@ -23,6 +23,8 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 header {
@@ -124,6 +126,102 @@ header p {
 .message-text {
     color: #333;
     word-wrap: break-word;
+}
+
+.message-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: #e74c3c;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.delete-btn:hover {
+    background: #fee;
+}
+
+/* Confirmation modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal-overlay.show {
+    display: flex;
+}
+
+.modal {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+}
+
+.modal h3 {
+    margin: 0 0 15px 0;
+    color: #1a2332;
+}
+
+.modal p {
+    margin: 0 0 20px 0;
+    color: #7f8c8d;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.modal-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.modal-btn.cancel {
+    background: #ecf0f1;
+    color: #2c3e50;
+}
+
+.modal-btn.cancel:hover {
+    background: #d5dbdb;
+}
+
+.modal-btn.confirm {
+    background: #e74c3c;
+    color: white;
+}
+
+.modal-btn.confirm:hover {
+    background: #c0392b;
 }
 
 .typing-indicator {

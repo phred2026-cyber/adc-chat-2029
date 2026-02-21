@@ -520,18 +520,29 @@ export class ChatRoom {
     };
     this.sessions.push(session);
     
+    // Auto-cleanup: Delete messages older than 30 days
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    try {
+      await this.env.DB.prepare(
+        'DELETE FROM messages WHERE created_at < ?'
+      ).bind(thirtyDaysAgo).run();
+    } catch (err) {
+      console.error('Error cleaning up old messages:', err);
+    }
+    
     // Get last 100 messages with profile images
     const messages = await this.env.DB.prepare(
-      'SELECT m.id, m.username, m.message, m.created_at, u.profile_image_url FROM messages m LEFT JOIN users u ON m.user_id = u.id ORDER BY m.created_at DESC LIMIT 100'
+      'SELECT m.id, m.user_id, m.username, m.text, m.timestamp, m.profile_image_url, m.created_at FROM messages ORDER BY m.created_at DESC LIMIT 100'
     ).all();
     
     websocket.send(JSON.stringify({
       type: 'previous-messages',
       messages: messages.results.reverse().map(m => ({
         id: m.id,
+        user_id: m.user_id,
         username: m.username,
-        text: m.message,
-        timestamp: formatTimestamp(m.created_at),
+        text: m.text,
+        timestamp: m.timestamp,
         profile_image_url: m.profile_image_url,
       })),
     }));
@@ -547,16 +558,18 @@ export class ChatRoom {
         
         if (data.type === 'chat-message') {
           const now = Date.now();
+          const timestamp = formatTimestamp(now);
           
           const result = await this.env.DB.prepare(
-            'INSERT INTO messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(user.userId, user.username, data.text, now).run();
+            'INSERT INTO messages (user_id, username, text, profile_image_url, timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+          ).bind(user.userId, user.username, data.text, user.profileImageUrl, timestamp, now).run();
           
           const message = {
             id: result.meta.last_row_id,
+            user_id: user.userId,
             username: user.username,
             text: data.text,
-            timestamp: formatTimestamp(now),
+            timestamp: timestamp,
             profile_image_url: user.profileImageUrl,
           };
           
@@ -564,6 +577,24 @@ export class ChatRoom {
             type: 'chat-message',
             message: message,
           });
+        } else if (data.type === 'delete-message') {
+          // Verify the user owns this message
+          const message = await this.env.DB.prepare(
+            'SELECT user_id FROM messages WHERE id = ?'
+          ).bind(data.messageId).first();
+          
+          if (message && message.user_id === user.userId) {
+            // Delete from database
+            await this.env.DB.prepare(
+              'DELETE FROM messages WHERE id = ?'
+            ).bind(data.messageId).run();
+            
+            // Broadcast deletion to all clients
+            this.broadcast({
+              type: 'message-deleted',
+              messageId: data.messageId,
+            });
+          }
         } else if (data.type === 'typing-start') {
           this.broadcast({
             type: 'typing-start',
