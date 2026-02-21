@@ -1,4 +1,4 @@
-// Authenticated Chat Frontend for Cloudflare
+// Authenticated Chat Frontend for Cloudflare with Enhancements
 
 const API_URL = 'https://adc-chat-2029.phred2026.workers.dev';
 let ws = null;
@@ -6,6 +6,9 @@ let reconnectTimeout = null;
 let currentUser = null;
 let accessToken = null;
 let refreshToken = null;
+let typingTimeout = null;
+let isTyping = false;
+let typingUsers = new Set();
 
 // DOM Elements
 const messagesContainer = document.getElementById('messages');
@@ -19,6 +22,60 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 const logoutBtn = document.getElementById('logoutBtn');
 const accountName = document.getElementById('accountName');
 const accountEmail = document.getElementById('accountEmail');
+const profileAvatar = document.getElementById('profileAvatar');
+const profileInitials = document.getElementById('profileInitials');
+const profileImage = document.getElementById('profileImage');
+const profileImageInput = document.getElementById('profileImageInput');
+const uploadImageBtn = document.getElementById('uploadImageBtn');
+const uploadStatus = document.getElementById('uploadStatus');
+const typingIndicator = document.getElementById('typingIndicator');
+
+// Format timestamp to Colorado time (America/Denver) in 24-hour format
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', {
+        timeZone: 'America/Denver',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// Get initials from username
+function getInitials(username) {
+    if (!username) return '?';
+    const parts = username.trim().split(' ');
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return username.substring(0, 2).toUpperCase();
+}
+
+// Generate color from username (consistent across sessions)
+function getUserColor(username) {
+    const colors = [
+        '#1a2332', '#2c3e50', '#34495e', '#16a085', 
+        '#27ae60', '#2980b9', '#8e44ad', '#c0392b'
+    ];
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) {
+        hash = username.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+}
+
+// Update profile avatar display
+function updateProfileAvatar(user) {
+    if (user.profile_image_url) {
+        profileImage.src = user.profile_image_url;
+        profileImage.style.display = 'block';
+        profileInitials.style.display = 'none';
+    } else {
+        profileInitials.textContent = getInitials(user.username);
+        profileInitials.style.display = 'block';
+        profileImage.style.display = 'none';
+    }
+}
 
 // Check authentication on page load
 async function checkAuth() {
@@ -27,7 +84,6 @@ async function checkAuth() {
     const userJson = localStorage.getItem('user');
     
     if (!accessToken || !refreshToken || !userJson) {
-        // Not logged in, redirect to auth page
         window.location.href = '/auth.html';
         return false;
     }
@@ -37,6 +93,7 @@ async function checkAuth() {
     // Update settings panel
     accountName.textContent = currentUser.username;
     accountEmail.textContent = currentUser.email;
+    updateProfileAvatar(currentUser);
     
     // Verify token is still valid
     try {
@@ -51,7 +108,6 @@ async function checkAuth() {
             return true;
         }
         
-        // Token expired, try to refresh
         return await refreshAccessToken();
     } catch (error) {
         console.error('Auth check failed:', error);
@@ -87,7 +143,6 @@ async function refreshAccessToken() {
 
 // Logout
 function logout() {
-    // Call logout endpoint
     if (refreshToken) {
         fetch(`${API_URL}/auth/logout`, {
             method: 'POST',
@@ -96,14 +151,81 @@ function logout() {
         }).catch(() => {});
     }
     
-    // Clear local storage
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     
-    // Redirect to auth page
     window.location.href = '/auth.html';
 }
+
+// Profile image upload
+uploadImageBtn.addEventListener('click', () => {
+    profileImageInput.click();
+});
+
+profileImageInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Validate file
+    if (!file.type.startsWith('image/')) {
+        uploadStatus.textContent = 'Please select an image file';
+        uploadStatus.className = 'upload-status error';
+        return;
+    }
+    
+    if (file.size > 2 * 1024 * 1024) {
+        uploadStatus.textContent = 'Image must be less than 2MB';
+        uploadStatus.className = 'upload-status error';
+        return;
+    }
+    
+    uploadImageBtn.disabled = true;
+    uploadStatus.textContent = 'Uploading...';
+    uploadStatus.className = 'upload-status';
+    
+    try {
+        // Convert to base64
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+        
+        // Upload to server
+        const response = await fetch(`${API_URL}/profile/update-image`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ image: base64 }),
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            currentUser.profile_image_url = data.profile_image_url;
+            localStorage.setItem('user', JSON.stringify(currentUser));
+            updateProfileAvatar(currentUser);
+            
+            uploadStatus.textContent = 'Profile image updated!';
+            uploadStatus.className = 'upload-status success';
+            
+            setTimeout(() => {
+                uploadStatus.textContent = '';
+            }, 3000);
+        } else {
+            throw new Error('Upload failed');
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        uploadStatus.textContent = 'Upload failed. Please try again.';
+        uploadStatus.className = 'upload-status error';
+    } finally {
+        uploadImageBtn.disabled = false;
+    }
+});
 
 // Settings panel toggle
 settingsBtn.addEventListener('click', () => {
@@ -165,12 +287,15 @@ function connectWebSocket() {
             const data = JSON.parse(event.data);
             
             if (data.type === 'previous-messages') {
-                // Load previous messages
                 data.messages.forEach(msg => addMessage(msg));
             } else if (data.type === 'chat-message') {
                 addMessage(data.message);
             } else if (data.type === 'system-message') {
                 addSystemMessage(data.text);
+            } else if (data.type === 'typing-start') {
+                handleTypingStart(data.username);
+            } else if (data.type === 'typing-stop') {
+                handleTypingStop(data.username);
             }
         } catch (err) {
             console.error('Error parsing message:', err);
@@ -186,15 +311,71 @@ function connectWebSocket() {
         console.log('WebSocket disconnected');
         setStatus('disconnected');
         
-        // Try to reconnect after 3 seconds
         reconnectTimeout = setTimeout(async () => {
-            // Refresh token before reconnecting
             const success = await refreshAccessToken();
             if (success) {
                 connectWebSocket();
             }
         }, 3000);
     };
+}
+
+// Typing indicator logic
+let typingStopTimeout = null;
+
+messageInput.addEventListener('input', () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    
+    if (!isTyping) {
+        isTyping = true;
+        setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'typing-start' }));
+            }
+        }, 500);
+    }
+    
+    clearTimeout(typingStopTimeout);
+    typingStopTimeout = setTimeout(() => {
+        if (isTyping) {
+            isTyping = false;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'typing-stop' }));
+            }
+        }
+    }, 2000);
+});
+
+function handleTypingStart(username) {
+    if (username === currentUser.username) return;
+    typingUsers.add(username);
+    updateTypingIndicator();
+}
+
+function handleTypingStop(username) {
+    typingUsers.delete(username);
+    updateTypingIndicator();
+}
+
+function updateTypingIndicator() {
+    if (typingUsers.size === 0) {
+        typingIndicator.style.display = 'none';
+        return;
+    }
+    
+    const users = Array.from(typingUsers);
+    let text;
+    
+    if (users.length === 1) {
+        text = `${users[0]} is typing...`;
+    } else if (users.length === 2) {
+        text = `${users[0]} and ${users[1]} are typing...`;
+    } else {
+        text = `${users.length} people are typing...`;
+    }
+    
+    typingIndicator.textContent = text;
+    typingIndicator.style.display = 'block';
 }
 
 // Add message to chat
@@ -208,7 +389,24 @@ function addMessage(msg) {
         messageDiv.style.borderLeft = '3px solid #2196f3';
     }
     
-    messageDiv.innerHTML = `
+    // Create avatar
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.style.background = getUserColor(msg.username);
+    
+    if (msg.profile_image_url) {
+        const avatarImg = document.createElement('img');
+        avatarImg.src = msg.profile_image_url;
+        avatarImg.alt = msg.username;
+        avatar.appendChild(avatarImg);
+    } else {
+        avatar.textContent = getInitials(msg.username);
+    }
+    
+    // Create message content
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.innerHTML = `
         <div class="message-header">
             <span class="message-name">${escapeHtml(msg.username)}</span>
             <span class="message-time">${msg.timestamp}</span>
@@ -216,6 +414,8 @@ function addMessage(msg) {
         <div class="message-text">${escapeHtml(msg.text)}</div>
     `;
     
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(content);
     messagesContainer.appendChild(messageDiv);
     
     // Auto-scroll to bottom
@@ -252,6 +452,13 @@ function sendMessage() {
     }
     
     if (ws && ws.readyState === WebSocket.OPEN) {
+        // Stop typing indicator
+        if (isTyping) {
+            isTyping = false;
+            ws.send(JSON.stringify({ type: 'typing-stop' }));
+            clearTimeout(typingStopTimeout);
+        }
+        
         ws.send(JSON.stringify({
             type: 'chat-message',
             text: text,

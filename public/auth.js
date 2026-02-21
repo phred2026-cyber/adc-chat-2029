@@ -1,4 +1,4 @@
-// Authentication Frontend Logic
+// Authentication Frontend Logic with Profile Image Support
 
 const API_URL = 'https://adc-chat-2029.phred2026.workers.dev';
 
@@ -18,15 +18,110 @@ const signInBtn = document.getElementById('signInBtn');
 const signUpName = document.getElementById('signUpName');
 const signUpEmail = document.getElementById('signUpEmail');
 const signUpBtn = document.getElementById('signUpBtn');
+const profileImageInput = document.getElementById('profileImageInput');
+const profilePreview = document.getElementById('profilePreview');
+const initialsPreview = document.getElementById('initialsPreview');
+const imagePreview = document.getElementById('imagePreview');
+
+// Username form elements (for verification flow)
+const usernameInput = document.getElementById('username');
+const createAccountBtn = document.getElementById('createAccountBtn');
+const profileImageInput2 = document.getElementById('profileImageInput2');
+const profilePreview2 = document.getElementById('profilePreview2');
+const initialsPreview2 = document.getElementById('initialsPreview2');
+const imagePreview2 = document.getElementById('imagePreview2');
 
 // Toggle elements
 const showSignUp = document.getElementById('showSignUp');
 const showSignIn = document.getElementById('showSignIn');
-
-// Shared elements
 const sentEmail = document.getElementById('sentEmail');
-const usernameInput = document.getElementById('username');
-const createAccountBtn = document.getElementById('createAccountBtn');
+
+let selectedImage = null;
+
+// Get initials from name
+function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+}
+
+// Handle profile image upload for signup
+profileImageInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+    }
+    
+    if (file.size > 2 * 1024 * 1024) {
+        alert('Image must be less than 2MB');
+        return;
+    }
+    
+    const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+    
+    selectedImage = base64;
+    imagePreview.src = base64;
+    imagePreview.classList.remove('hidden');
+    initialsPreview.style.display = 'none';
+});
+
+// Handle profile image for username form
+if (profileImageInput2) {
+    profileImageInput2.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            return;
+        }
+        
+        if (file.size > 2 * 1024 * 1024) {
+            alert('Image must be less than 2MB');
+            return;
+        }
+        
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+        
+        selectedImage = base64;
+        imagePreview2.src = base64;
+        imagePreview2.classList.remove('hidden');
+        initialsPreview2.style.display = 'none';
+    });
+}
+
+// Update initials preview when name changes
+signUpName.addEventListener('input', () => {
+    const name = signUpName.value.trim();
+    if (name && !selectedImage) {
+        initialsPreview.textContent = getInitials(name);
+    }
+});
+
+if (usernameInput) {
+    usernameInput.addEventListener('input', () => {
+        const name = usernameInput.value.trim();
+        if (name && !selectedImage) {
+            initialsPreview2.textContent = getInitials(name);
+        }
+    });
+}
 
 // Toggle between sign in and sign up
 showSignUp.addEventListener('click', () => {
@@ -41,6 +136,7 @@ showSignIn.addEventListener('click', () => {
     signInForm.classList.remove('hidden');
     modeSubtitle.textContent = 'Sign in to join the chat';
     statusMessage.classList.add('hidden');
+    selectedImage = null;
 });
 
 // Show status message
@@ -78,7 +174,6 @@ signInBtn.addEventListener('click', async () => {
         const data = await response.json();
         
         if (response.ok) {
-            // Hide forms, show success message
             signInForm.classList.add('hidden');
             linkSent.classList.remove('hidden');
             sentEmail.textContent = email;
@@ -95,7 +190,7 @@ signInBtn.addEventListener('click', async () => {
     }
 });
 
-// Sign Up with name
+// Sign Up with name and optional profile image
 signUpBtn.addEventListener('click', async () => {
     const email = signUpEmail.value.trim();
     const name = signUpName.value.trim();
@@ -114,8 +209,11 @@ signUpBtn.addEventListener('click', async () => {
     signUpBtn.textContent = 'Creating Account...';
     
     try {
-        // Store the username for later
+        // Store the username and image for later
         sessionStorage.setItem('signupUsername', name);
+        if (selectedImage) {
+            sessionStorage.setItem('signupImage', selectedImage);
+        }
         
         const response = await fetch(`${API_URL}/auth/request`, {
             method: 'POST',
@@ -126,7 +224,6 @@ signUpBtn.addEventListener('click', async () => {
         const data = await response.json();
         
         if (response.ok) {
-            // Hide forms, show success message
             signUpForm.classList.add('hidden');
             linkSent.classList.remove('hidden');
             sentEmail.textContent = email;
@@ -144,33 +241,36 @@ signUpBtn.addEventListener('click', async () => {
 });
 
 // Handle magic link verification
-async function verifyMagicLink(token, username = null) {
+async function verifyMagicLink(token, username = null, profileImage = null) {
     try {
-        // Check if we have a stored username from signup
+        // Check if we have stored data from signup
         const storedUsername = sessionStorage.getItem('signupUsername');
+        const storedImage = sessionStorage.getItem('signupImage');
+        
         if (!username && storedUsername) {
             username = storedUsername;
+        }
+        if (!profileImage && storedImage) {
+            profileImage = storedImage;
         }
         
         const response = await fetch(`${API_URL}/auth/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token, username }),
+            body: JSON.stringify({ token, username, profileImage }),
         });
         
         const data = await response.json();
         
         if (response.ok) {
             if (data.needsUsername) {
-                // New user - need to set username (fallback for old flow)
+                // New user - need to set username
                 signInForm.classList.add('hidden');
                 signUpForm.classList.add('hidden');
                 linkSent.classList.add('hidden');
                 usernameForm.classList.remove('hidden');
                 
-                // Store token for username creation
                 sessionStorage.setItem('pendingToken', token);
-                
                 return;
             }
             
@@ -179,8 +279,9 @@ async function verifyMagicLink(token, username = null) {
             localStorage.setItem('refreshToken', data.refreshToken);
             localStorage.setItem('user', JSON.stringify(data.user));
             
-            // Clear signup username from session
+            // Clear signup data from session
             sessionStorage.removeItem('signupUsername');
+            sessionStorage.removeItem('signupImage');
             
             showStatus('Login successful! Redirecting...', 'success');
             
@@ -196,35 +297,37 @@ async function verifyMagicLink(token, username = null) {
     }
 }
 
-// Create account with username (fallback for old flow)
-createAccountBtn.addEventListener('click', async () => {
-    const username = usernameInput.value.trim();
-    
-    if (!username || username.length < 2) {
-        showStatus('Username must be at least 2 characters', 'error');
-        return;
-    }
-    
-    if (!/^[a-zA-Z0-9_\- ]+$/.test(username)) {
-        showStatus('Username can only contain letters, numbers, spaces, hyphens, and underscores', 'error');
-        return;
-    }
-    
-    const token = sessionStorage.getItem('pendingToken');
-    if (!token) {
-        showStatus('Session expired. Please request a new magic link.', 'error');
-        return;
-    }
-    
-    createAccountBtn.disabled = true;
-    createAccountBtn.textContent = 'Creating Account...';
-    
-    await verifyMagicLink(token, username);
-    
-    createAccountBtn.disabled = false;
-    createAccountBtn.textContent = 'Create Account';
-    sessionStorage.removeItem('pendingToken');
-});
+// Create account with username
+if (createAccountBtn) {
+    createAccountBtn.addEventListener('click', async () => {
+        const username = usernameInput.value.trim();
+        
+        if (!username || username.length < 2) {
+            showStatus('Username must be at least 2 characters', 'error');
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9_\- ]+$/.test(username)) {
+            showStatus('Username can only contain letters, numbers, spaces, hyphens, and underscores', 'error');
+            return;
+        }
+        
+        const token = sessionStorage.getItem('pendingToken');
+        if (!token) {
+            showStatus('Session expired. Please request a new magic link.', 'error');
+            return;
+        }
+        
+        createAccountBtn.disabled = true;
+        createAccountBtn.textContent = 'Creating Account...';
+        
+        await verifyMagicLink(token, username, selectedImage);
+        
+        createAccountBtn.disabled = false;
+        createAccountBtn.textContent = 'Create Account';
+        sessionStorage.removeItem('pendingToken');
+    });
+}
 
 // Check for magic link token in URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -238,7 +341,6 @@ if (token) {
 // Check if already logged in
 const accessToken = localStorage.getItem('accessToken');
 if (accessToken && !token) {
-    // Verify token is still valid
     fetch(`${API_URL}/auth/verify-token`, {
         method: 'POST',
         headers: {
@@ -248,7 +350,6 @@ if (accessToken && !token) {
         if (response.ok) {
             window.location.href = '/';
         } else {
-            // Token invalid, try to refresh
             const refreshToken = localStorage.getItem('refreshToken');
             if (refreshToken) {
                 fetch(`${API_URL}/auth/refresh`, {
