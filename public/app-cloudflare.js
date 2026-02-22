@@ -1352,9 +1352,18 @@ function connectWebSocket() {
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'challenge-created') {
                 // Reconcile temp ID with real server-assigned ID
+                let ownChallenge = null;
                 if (window._outgoingChallenges && data.tempId) {
                     const entry = window._outgoingChallenges.find(c => c.challengeId === data.tempId);
-                    if (entry) entry.challengeId = data.challengeId;
+                    if (entry) {
+                        entry.challengeId = data.challengeId;
+                        ownChallenge = entry;
+                    }
+                }
+                // Show challenger's own chat card now that we have the real challengeId
+                if (ownChallenge) {
+                    const targetDisplay = ownChallenge.isOpen ? null : (ownChallenge.targetName || 'Unknown');
+                    showOwnChallengeCard(targetDisplay, ownChallenge.gameName, data.challengeId);
                 }
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'open-challenges') {
@@ -1424,10 +1433,6 @@ function connectWebSocket() {
                 updateBellUI();
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-started') {
-                // Clean up any own challenge cards
-                for (const [key, card] of pendingChallenges) {
-                    if (key.startsWith('own_')) { card.remove(); pendingChallenges.delete(key); }
-                }
                 myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: data.yourSymbol });
                 window._myActiveGames = myActiveGames;
                 if (typeof NTTT !== 'undefined') NTTT.onGameStarted(data.gameState, data.yourSymbol);
@@ -1797,6 +1802,10 @@ function sendTargetedChallenge() {
 
 function showOwnChallengeCard(targetName, gameName, challengeId) {
     removeEmptyState();
+
+    // Don't create a duplicate card for the same challenge
+    if (pendingChallenges.has(challengeId)) return;
+
     const card = document.createElement('div');
     card.className = 'game-invite-card';
     card.dataset.challengeId = challengeId;
@@ -1809,15 +1818,12 @@ function showOwnChallengeCard(targetName, gameName, challengeId) {
         <span class="game-invite-icon">🎮</span>
         <span class="game-invite-text">${msg}</span>
         <div class="game-invite-actions">
-            <span class="game-invite-pending">Waiting...</span>
+            <button class="game-invite-btn cancel" onclick="cancelChallenge('${challengeId}')">✕ Cancel</button>
         </div>
     `;
     messagesContainer.appendChild(card);
-    // We use a special key to store this — actual challengeId comes in from server event
-    // For simplicity store with a timestamp key that we'll clean up when game starts/declines
-    const key = 'own_' + Date.now();
-    card.dataset.ownKey = key;
-    pendingChallenges.set(key, card);
+    // Store with real challengeId so cleanup events (game-challenge-removed, game-challenge-accepted) work
+    pendingChallenges.set(challengeId, card);
     scrollToBottom(true);
 }
 
