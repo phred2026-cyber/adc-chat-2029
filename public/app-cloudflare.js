@@ -1435,9 +1435,12 @@ function connectWebSocket() {
                 updateBellUI();
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-started') {
+                // Add to myActiveGames for BOTH players (challenger and acceptor)
+                // Track whether this game was already known (reconnect restore vs fresh start)
+                const isNewGame = !myActiveGames.has(data.gameState.gameId);
                 myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: data.yourSymbol });
                 window._myActiveGames = myActiveGames;
-                if (typeof NTTT !== 'undefined') NTTT.onGameStarted(data.gameState, data.yourSymbol);
+                if (typeof NTTT !== 'undefined') NTTT.onGameStarted(data.gameState, data.yourSymbol, isNewGame);
             } else if (data.type === 'game-state-update') {
                 if (myActiveGames.has(data.gameState.gameId)) {
                     const existing = myActiveGames.get(data.gameState.gameId);
@@ -1446,6 +1449,12 @@ function connectWebSocket() {
                 }
                 if (typeof NTTT !== 'undefined') NTTT.onGameUpdate(data.gameState);
             } else if (data.type === 'game-over') {
+                // Update myActiveGames so NTTT can show the final state before removing
+                if (myActiveGames.has(data.gameState.gameId)) {
+                    const existing = myActiveGames.get(data.gameState.gameId);
+                    myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: existing.yourSymbol });
+                    window._myActiveGames = myActiveGames;
+                }
                 if (typeof NTTT !== 'undefined') NTTT.onGameOver(data.gameState);
                 // Queue notification if not the winner
                 if (data.gameState.winner && data.gameState.winner !== 'draw' &&
@@ -1459,6 +1468,9 @@ function connectWebSocket() {
                     });
                 }
             } else if (data.type === 'game-forfeit-notify') {
+                // Remove from myActiveGames for BOTH players
+                myActiveGames.delete(data.gameId);
+                window._myActiveGames = myActiveGames;
                 if (typeof NTTT !== 'undefined') NTTT.onForfeit(data.gameId, data.forfeitedByName);
                 addNotification({
                     id: Date.now().toString(),

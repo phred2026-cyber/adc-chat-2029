@@ -952,6 +952,28 @@ export class ChatRoom {
       challenges: openChallenges,
     }));
 
+    // Restore active games for this user on reconnect
+    // Send game-started for any active game this user is a player in
+    for (const [gameId, gameState] of this.games) {
+      if (gameState.gameOver) continue; // skip finished games
+      const playerX = gameState.players && gameState.players.X;
+      const playerO = gameState.players && gameState.players.O;
+      if (!playerX || !playerO) continue;
+      if (playerX.userId === user.userId) {
+        websocket.send(JSON.stringify({
+          type: 'game-started',
+          gameState,
+          yourSymbol: 'X',
+        }));
+      } else if (playerO.userId === user.userId) {
+        websocket.send(JSON.stringify({
+          type: 'game-started',
+          gameState,
+          yourSymbol: 'O',
+        }));
+      }
+    }
+
     // Only broadcast join message if this is user's first session ever (new account)
     // We track this by checking if they've sent any messages before
     const hasMessages = await this.env.DB.prepare(

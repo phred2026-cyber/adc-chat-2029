@@ -409,9 +409,8 @@ const NTTT = (() => {
 
         if (gameTitle) gameTitle.textContent = game.gameName || 'Nested TTT';
 
-        // Show board area, hide game list
-        const gameListParent = gameListEl ? gameListEl.parentElement : null;
-        if (gameListParent) gameListParent.style.display = 'none';
+        // Show board area, hide game list (both are inside ntttPanelContinue)
+        if (gameListEl) gameListEl.style.display = 'none';
         if (boardArea) boardArea.style.display = 'flex';
 
         renderCurrentGame();
@@ -419,8 +418,7 @@ const NTTT = (() => {
 
     window.ntttBackToList = function() {
         if (boardArea) boardArea.style.display = 'none';
-        const gameListParent = gameListEl ? gameListEl.parentElement : null;
-        if (gameListParent) gameListParent.style.display = 'flex';
+        if (gameListEl) gameListEl.style.display = '';
         currentGame = null;
         renderGameList();
     };
@@ -554,23 +552,42 @@ const NTTT = (() => {
         const fullGame = { ...gameState, yourSymbol };
         window._myActiveGames.set(gameState.gameId, fullGame);
 
-        // AUTO-OPEN the game overlay and jump straight into the game board
-        currentGame = fullGame;
-        if (gameTitle) gameTitle.textContent = gameState.gameName || 'Nested TTT';
+        // Determine if we are the challenger (sender) — challenger is always X
+        const isChallenger = (currentUserId !== null) &&
+            gameState.players &&
+            gameState.players.X &&
+            gameState.players.X.userId === currentUserId;
 
-        // Make sure overlay is open
-        if (overlay) overlay.classList.add('show');
-
-        // Switch to Continue tab and show board area
-        ntttShowTab('continue');
-
-        const gameListParent = gameListEl ? gameListEl.parentElement : null;
-        if (gameListParent) gameListParent.style.display = 'none';
-        if (boardArea) boardArea.style.display = 'flex';
-
-        renderCurrentGame();
         renderGameList();
         refreshInvitesTab();
+
+        if (isChallenger) {
+            // Challenger: silently add to Continue list, show a toast but DON'T auto-open overlay
+            if (typeof showToast === 'function') {
+                showToast('⚔️ Your challenge was accepted! Game is ready in Continue.');
+            }
+            // If NTTT overlay is already open, refresh so the game appears in Continue tab
+            if (overlay && overlay.classList.contains('show')) {
+                // Don't switch away from whatever tab they're on — just refresh game list
+                renderGameList();
+            }
+        } else {
+            // Acceptor: auto-open the overlay and jump straight into the game board
+            currentGame = fullGame;
+            if (gameTitle) gameTitle.textContent = gameState.gameName || 'Nested TTT';
+
+            // Make sure overlay is open
+            if (overlay) overlay.classList.add('show');
+
+            // Switch to Continue tab and show board area
+            ntttShowTab('continue');
+
+            // Hide game list, show board (both are siblings inside ntttPanelContinue)
+            if (gameListEl) gameListEl.style.display = 'none';
+            if (boardArea) boardArea.style.display = 'flex';
+
+            renderCurrentGame();
+        }
     }
 
     function onGameUpdate(gameState) {
@@ -588,14 +605,19 @@ const NTTT = (() => {
 
     function onGameOver(gameState) {
         onGameUpdate(gameState);
-        // Show result, then remove after delay
+        // Show result for 15s, then remove from Continue for BOTH players
         setTimeout(() => {
             if (window._myActiveGames) window._myActiveGames.delete(gameState.gameId);
+            // If player is currently viewing this game, go back to list
+            if (currentGame && currentGame.gameId === gameState.gameId) {
+                ntttBackToList();
+            }
             renderGameList();
         }, 15000);
     }
 
     function onForfeit(gameId, forfeitedByName) {
+        // Remove from Continue for BOTH players
         if (window._myActiveGames) window._myActiveGames.delete(gameId);
         if (currentGame && currentGame.gameId === gameId) {
             currentGame = { ...currentGame, gameOver: true };
@@ -603,6 +625,12 @@ const NTTT = (() => {
                 turnStatus.textContent = `${forfeitedByName} forfeited`;
                 turnStatus.style.color = '#e74c3c';
             }
+            // After 5s, auto-back to list
+            setTimeout(() => {
+                if (currentGame && currentGame.gameId === gameId) {
+                    ntttBackToList();
+                }
+            }, 5000);
         }
         renderGameList();
     }
