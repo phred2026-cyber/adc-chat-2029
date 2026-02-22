@@ -662,6 +662,7 @@ export class ChatRoom {
     // Load persisted challenges from D1 on first construction
     this.state.blockConcurrencyWhile(async () => {
       await this._ensureChallengesTable();
+      await this._ensureGamesTable();
       await this._loadChallengesFromD1();
       this.initialized = true;
     });
@@ -684,6 +685,75 @@ export class ChatRoom {
       `).run();
     } catch (err) {
       console.error('Error ensuring challenges table:', err);
+    }
+  }
+
+  async _ensureGamesTable() {
+    try {
+      await this.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS games (
+          id TEXT PRIMARY KEY,
+          player1_id INTEGER,
+          player2_id INTEGER,
+          player1_name TEXT,
+          player2_name TEXT,
+          size INTEGER DEFAULT 1,
+          board_state TEXT,
+          current_turn INTEGER,
+          status TEXT DEFAULT 'active',
+          winner_id INTEGER,
+          created_at INTEGER,
+          updated_at INTEGER
+        )
+      `).run();
+    } catch (err) {
+      console.error('Error ensuring games table:', err);
+    }
+  }
+
+  async _saveGameToDB(gameState) {
+    try {
+      const player1 = gameState.players.X;
+      const player2 = gameState.players.O;
+      const currentTurnUserId = gameState.players[gameState.currentPlayer]
+        ? gameState.players[gameState.currentPlayer].userId
+        : null;
+      const winnerId = gameState.winner && gameState.winner !== 'draw'
+        ? (gameState.players[gameState.winner] ? gameState.players[gameState.winner].userId : null)
+        : null;
+
+      await this.env.DB.prepare(`
+        INSERT OR REPLACE INTO games
+          (id, player1_id, player2_id, player1_name, player2_name, size, board_state, current_turn, status, winner_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        gameState.gameId,
+        player1.userId,
+        player2.userId,
+        player1.username,
+        player2.username,
+        gameState.size || 0,
+        JSON.stringify({
+          board: gameState.board,
+          wonBoards: gameState.wonBoards,
+          activeBoard: gameState.activeBoard,
+        }),
+        currentTurnUserId,
+        gameState.gameOver ? (gameState.winner ? 'finished' : 'finished') : 'active',
+        winnerId,
+        gameState.createdAt || Date.now(),
+        Date.now(),
+      ).run();
+    } catch (err) {
+      console.error('Error saving game to D1:', err);
+    }
+  }
+
+  async _deleteGameFromDB(gameId) {
+    try {
+      await this.env.DB.prepare('DELETE FROM games WHERE id = ?').bind(gameId).run();
+    } catch (err) {
+      console.error('Error deleting game from D1:', err);
     }
   }
 
@@ -1047,6 +1117,9 @@ export class ChatRoom {
           };
           this.games.set(gameId, gameState);
 
+          // Persist game state to D1
+          await this._saveGameToDB(gameState);
+
           // Schedule cleanup after 1 hour
           setTimeout(() => this.games.delete(gameId), 60 * 60 * 1000);
 
@@ -1187,6 +1260,9 @@ export class ChatRoom {
             game.currentPlayer = expectedPlayer === 'X' ? 'O' : 'X';
           }
 
+          // Persist updated game state to D1
+          await this._saveGameToDB(game);
+
           // Broadcast game state update
           const updateMsg = { type: game.gameOver ? 'game-over' : 'game-state-update', gameState: game };
           if (game.gameOver) {
@@ -1224,8 +1300,11 @@ export class ChatRoom {
               winner: game.winner,
               winnerName,
             });
-            // Cleanup after 1 minute
-            setTimeout(() => this.games.delete(gameId), 60 * 1000);
+            // Cleanup DO memory and D1 after 1 minute
+            setTimeout(async () => {
+              this.games.delete(gameId);
+              await this._deleteGameFromDB(gameId);
+            }, 60 * 1000);
           }
 
         } else if (data.type === 'game-forfeit') {
@@ -1236,6 +1315,8 @@ export class ChatRoom {
           const isPlayer = Object.values(game.players).some(p => p.userId === user.userId);
           if (!isPlayer) return;
           this.games.delete(gameId);
+          // Clean up from D1
+          await this._deleteGameFromDB(gameId);
           this.broadcast({
             type: 'game-forfeit-notify',
             gameId,

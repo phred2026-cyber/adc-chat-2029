@@ -2360,14 +2360,19 @@ header .header-subtitle {
     position: relative;
     touch-action: none;
     border-radius: 12px;
-    background: #0d1520;
+    background: #0a1018;
     cursor: grab;
+    min-height: 200px;
 }
 .nttt-viewport:active { cursor: grabbing; }
 .nttt-board-root {
     position: absolute;
+    top: 0;
+    left: 0;
     transform-origin: top left;
     will-change: transform;
+    user-select: none;
+    -webkit-user-select: none;
 }
 .nttt-zoom-controls {
     display: flex;
@@ -2386,40 +2391,47 @@ header .header-subtitle {
 }
 .nttt-zoom-controls button:hover { border-color: #d4a574; color: #d4a574; }
 
-/* Board rendering */
+/* Board rendering - recursive nested boards */
 .nttt-board {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-    padding: 3px;
     border-radius: 6px;
     box-sizing: border-box;
+    position: relative;
+    /* border and gap set dynamically by JS based on nesting level */
 }
-.nttt-board.won-X { background: rgba(52,152,219,0.15); outline: 2px solid #3498db; }
-.nttt-board.won-O { background: rgba(231,76,60,0.15); outline: 2px solid #e74c3c; }
-.nttt-board.won-draw { background: rgba(128,128,128,0.15); }
-.nttt-board.active { outline: 2px solid #d4a574; }
+.nttt-board.won-X { background: rgba(52,152,219,0.12); }
+.nttt-board.won-O { background: rgba(231,76,60,0.12); }
+.nttt-board.won-draw { background: rgba(128,128,128,0.12); }
+/* active outline is set inline by JS with gold color */
 
 .nttt-cell {
-    aspect-ratio: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 4px;
     font-weight: bold;
     color: #fff;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.12s, transform 0.08s;
     position: relative;
-    background: rgba(255,255,255,0.03);
+    background: rgba(255,255,255,0.04);
     user-select: none;
+    flex-shrink: 0;
 }
-.nttt-cell:hover:not(.taken):not(.inactive) { background: rgba(212,165,116,0.15); }
+.nttt-cell:hover:not(.taken):not(.inactive) {
+    background: rgba(212,165,116,0.22);
+    transform: scale(1.06);
+    z-index: 2;
+}
+.nttt-cell:active:not(.taken):not(.inactive) {
+    transform: scale(0.96);
+}
 .nttt-cell.taken { cursor: default; }
-.nttt-cell.X { color: #3498db; }
-.nttt-cell.O { color: #e74c3c; }
-.nttt-cell.inactive { opacity: 0.5; cursor: default; pointer-events: none; }
+.nttt-cell.X { color: #4a90d9; font-size: inherit; }
+.nttt-cell.O { color: #e74c3c; font-size: inherit; }
+.nttt-cell.inactive { opacity: 0.4; cursor: default; pointer-events: none; }
 
 /* Won overlay on a board */
 .nttt-won-mark {
@@ -2428,14 +2440,15 @@ header .header-subtitle {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: clamp(1.5rem, 6vw, 4rem);
+    font-size: 60%;
     font-weight: bold;
     border-radius: 4px;
     pointer-events: none;
+    z-index: 10;
 }
-.nttt-won-mark.X { color: #3498db; background: rgba(52,152,219,0.1); }
-.nttt-won-mark.O { color: #e74c3c; background: rgba(231,76,60,0.1); }
-.nttt-won-mark.draw { color: #888; font-size: 1.5rem; }
+.nttt-won-mark.X { color: #4a90d9; background: rgba(74,144,217,0.15); }
+.nttt-won-mark.O { color: #e74c3c; background: rgba(231,76,60,0.15); }
+.nttt-won-mark.draw { color: #888; background: rgba(128,128,128,0.1); }
 
 /* Invites */
 .nttt-invites-section { margin-bottom: 20px; }

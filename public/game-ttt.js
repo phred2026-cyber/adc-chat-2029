@@ -1,6 +1,6 @@
 // ============================================================
-// NESTED TIC-TAC-TOE (NTTT)
-// Recursive board, size 0-9, zoom/pan, full-screen tabbed UI
+// NESTED TIC-TAC-TOE (NTTT) - Major Overhaul
+// Recursive board, size 0-9, zoom/pan canvas, full-screen popup
 // ============================================================
 
 const NTTT = (() => {
@@ -11,6 +11,9 @@ const NTTT = (() => {
     let pinchDist = 0;
     let ws = null;
     let currentUserId = null;
+
+    // Level colors for grid lines (depth 0 = innermost)
+    const LEVEL_COLORS = ['#aaa', '#4a90d9', '#e67e22', '#9b59b6', '#2ecc71', '#e74c3c'];
 
     const overlay = document.getElementById('ntttOverlay');
     const boardRoot = document.getElementById('ntttBoardRoot');
@@ -30,14 +33,17 @@ const NTTT = (() => {
     // ---- Tab switching ----
     window.ntttShowTab = function(tab) {
         ['continue','invites','new'].forEach(t => {
-            document.getElementById('ntttPanel' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = t === tab ? 'flex' : 'none';
-            document.getElementById('ntttTab' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('active', t === tab);
+            const panel = document.getElementById('ntttPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+            const tabBtn = document.getElementById('ntttTab' + t.charAt(0).toUpperCase() + t.slice(1));
+            if (panel) panel.style.display = t === tab ? 'flex' : 'none';
+            if (tabBtn) tabBtn.classList.toggle('active', t === tab);
         });
         if (tab === 'new') refreshPlayerDropdown();
     };
 
     window.closeNTTT = function() {
         if (overlay) overlay.classList.remove('show');
+        // If we were in game view, don't lose current game — just hide overlay
     };
 
     window.openNTTT = function(defaultTab) {
@@ -116,14 +122,13 @@ const NTTT = (() => {
             gameName,
             size: Math.min(4, Math.max(0, selectedSize)), // cap at 4 for safety
             targetUserId: isOpen ? null : parseInt(targetVal),
-            tempId, // so server can echo it back for ID reconciliation
+            tempId,
         }));
 
-        // Track in outgoing for BOTH open and private challenges
         if (!window._outgoingChallenges) window._outgoingChallenges = [];
         const targetName = isOpen ? 'anyone' : (select.options[select.selectedIndex]?.text?.replace(/^[🟢⚫]\s*/, '') || 'Unknown');
         window._outgoingChallenges.push({
-            challengeId: tempId, // will be reconciled when challenge-created arrives
+            challengeId: tempId,
             gameName,
             targetName,
             targetUserId: isOpen ? null : parseInt(targetVal),
@@ -133,64 +138,115 @@ const NTTT = (() => {
         ntttShowTab('invites');
     };
 
-    // ---- Board rendering ----
-    // Recursively builds nested boards
+    // ============================================================
+    // BOARD RENDERING - Complete rewrite with proper recursive layout
+    // ============================================================
+
+    // Cell size in pixels at the leaf level
+    const LEAF_CELL_PX = 42;
+    const BOARD_GAP = 3;    // gap between cells within a board
+    const LEVEL_GAP = 5;    // additional gap between sub-boards at each nesting level
+
+    // Compute the total pixel size of a board of given size
+    function boardPixelSize(size) {
+        if (size === 0) {
+            // 3 cells + 2 gaps
+            return 3 * LEAF_CELL_PX + 2 * BOARD_GAP;
+        }
+        // 3 sub-boards + 2 level gaps + border padding
+        const subSize = boardPixelSize(size - 1);
+        return 3 * subSize + 2 * LEVEL_GAP + 8; // 8 = 4px padding each side
+    }
+
+    // Recursively builds nested boards as DOM elements
     // `board` at size 0 is an array of 9 cells (null/'X'/'O')
-    // at size N it's an array of 9 sub-boards
+    // at size N it's an array of 9 sub-boards (or null for empty)
     // `path` is the array of indices from root to this board
-    // `activeBoard` = which board index at each level is "active" (must play in)
-    function renderBoard(board, size, path, activeBoard, wonBoards) {
+    // `activeBoard` = array of indices from server (null = play anywhere)
+    // `wonBoards` = map of pathKey -> 'X'/'O'/'draw'
+    // `depth` = nesting depth (0 = innermost, increases outward)
+    function renderBoard(board, size, path, activeBoard, wonBoards, depth) {
         const el = document.createElement('div');
         el.className = 'nttt-board';
 
         const boardKey = path.join('-');
         const wonMark = wonBoards && wonBoards[boardKey];
 
+        // Apply level-specific border color
+        const levelColor = LEVEL_COLORS[Math.min(depth, LEVEL_COLORS.length - 1)];
+        el.style.borderColor = levelColor;
+
         if (wonMark) {
             el.classList.add(`won-${wonMark}`);
+            el.style.outline = `3px solid ${levelColor}`;
             const mark = document.createElement('div');
             mark.className = `nttt-won-mark ${wonMark}`;
             mark.textContent = wonMark === 'draw' ? '—' : wonMark;
             el.appendChild(mark);
+            // Size must still be set for layout purposes
+            const px = boardPixelSize(size);
+            el.style.width = px + 'px';
+            el.style.height = px + 'px';
             return el;
         }
 
-        // Check if this board is active (must play in)
+        // Check if this board is active (where you MUST play)
         const isActive = isActivePath(path, activeBoard);
-        if (isActive && !wonMark && currentGame && !currentGame.gameOver) {
+        if (isActive && currentGame && !currentGame.gameOver) {
             el.classList.add('active');
+            el.style.outline = `3px solid #d4a574`;
         }
 
-        for (let i = 0; i < 9; i++) {
-            const childPath = [...path, i];
-            if (size === 0) {
-                // Leaf cell
+        // Set sizing
+        const px = boardPixelSize(size);
+        el.style.width = px + 'px';
+        el.style.height = px + 'px';
+
+        if (size === 0) {
+            // Leaf board: render 9 clickable cells
+            el.style.gap = BOARD_GAP + 'px';
+            el.style.padding = '0';
+            el.style.border = `2px solid ${levelColor}`;
+
+            for (let i = 0; i < 9; i++) {
                 const cell = document.createElement('div');
                 cell.className = 'nttt-cell';
-                const val = board[i];
+                cell.style.width = LEAF_CELL_PX + 'px';
+                cell.style.height = LEAF_CELL_PX + 'px';
+                cell.style.fontSize = Math.floor(LEAF_CELL_PX * 0.55) + 'px';
+
+                const val = board ? board[i] : null;
                 if (val) {
                     cell.classList.add('taken', val);
                     cell.textContent = val;
                 } else {
-                    // Determine if clickable
                     const canPlay = currentGame &&
                         !currentGame.gameOver &&
+                        currentGame.players[currentGame.currentPlayer] &&
                         currentGame.players[currentGame.currentPlayer].userId === currentUserId &&
                         isActive;
-                    if (!canPlay) cell.classList.add('inactive');
-                    else cell.addEventListener('click', () => makeMove(path, i));
+                    if (canPlay) {
+                        cell.addEventListener('click', () => makeMove(path, i));
+                    } else {
+                        cell.classList.add('inactive');
+                    }
                 }
                 el.appendChild(cell);
-            } else {
-                // Sub-board
-                const subEl = renderBoard(board[i] || emptyBoard(size - 1), size - 1, childPath, activeBoard, wonBoards);
-                // Size-based scaling: each level is ~140px per cell minimum
-                const cellSize = Math.pow(3, size) * 14;
-                subEl.style.width = cellSize + 'px';
-                subEl.style.height = cellSize + 'px';
+            }
+        } else {
+            // Non-leaf board: render 9 sub-boards
+            el.style.gap = LEVEL_GAP + 'px';
+            el.style.padding = '4px';
+            el.style.border = `3px solid ${levelColor}`;
+
+            for (let i = 0; i < 9; i++) {
+                const childPath = [...path, i];
+                const subBoard = (board && board[i]) ? board[i] : emptyBoard(size - 1);
+                const subEl = renderBoard(subBoard, size - 1, childPath, activeBoard, wonBoards, depth - 1);
                 el.appendChild(subEl);
             }
         }
+
         return el;
     }
 
@@ -199,13 +255,33 @@ const NTTT = (() => {
         return Array(9).fill(null).map(() => emptyBoard(size - 1));
     }
 
+    // Check if the given board path is active (must play in this board)
+    // activeBoard from server: array like [4, 2] meaning root→cell4→cell2
+    // path: current board path, e.g. [4] for a sub-board at index 4
     function isActivePath(path, activeBoard) {
-        // activeBoard is an array of indices (one per level) saying which sub-board is active
-        // null means "play anywhere"
-        if (!activeBoard) return true;
-        if (path.length === 0) return true;
+        if (!activeBoard) return true; // null = play anywhere
+        if (path.length === 0) return true; // root is always "reachable"
+
+        // The active board is the one whose path equals activeBoard exactly
+        // But we also need to allow playing in it if it's a leaf
+        // A board is "active" if its path is a prefix of or equal to activeBoard
+        // AND if it's a leaf (size === 0), its path must equal activeBoard
+
+        // For intermediate boards: if activeBoard starts with this path, this board is on the path
+        if (path.length > activeBoard.length) return false;
+
         for (let i = 0; i < path.length; i++) {
-            if (activeBoard[i] !== null && activeBoard[i] !== path[i]) return false;
+            if (path[i] !== activeBoard[i]) return false;
+        }
+        return true;
+    }
+
+    // Check if a path is exactly the active board (for leaf-level active check)
+    function isExactlyActive(path, activeBoard) {
+        if (!activeBoard) return true;
+        if (path.length !== activeBoard.length) return false;
+        for (let i = 0; i < path.length; i++) {
+            if (path[i] !== activeBoard[i]) return false;
         }
         return true;
     }
@@ -223,28 +299,54 @@ const NTTT = (() => {
     function renderCurrentGame() {
         if (!currentGame || !boardRoot) return;
         boardRoot.innerHTML = '';
-        const size = currentGame.size || 0;
-        const boardEl = renderBoard(currentGame.board, size, [], currentGame.activeBoard, currentGame.wonBoards);
-        // Set root board size
-        const rootSize = Math.pow(3, size + 1) * 14;
-        boardEl.style.width = rootSize + 'px';
-        boardEl.style.height = rootSize + 'px';
+
+        const size = currentGame.size !== undefined ? currentGame.size : 0;
+        const board = currentGame.board || emptyBoard(size);
+
+        // Compute depth (size 0 = depth 0 = innermost = no nesting)
+        // For display: depth parameter for renderBoard means "how deep is THIS board"
+        // The ROOT board is at depth=size, leaf boards are at depth=0
+        const boardEl = renderBoard(
+            board,
+            size,
+            [],
+            currentGame.activeBoard || null,
+            currentGame.wonBoards || {},
+            size  // root board depth = size (largest number = outermost)
+        );
+
         boardRoot.appendChild(boardEl);
         updateTurnStatus();
+
+        // Auto-center the board in the viewport
+        if (viewport) {
+            const vpW = viewport.clientWidth || 400;
+            const vpH = viewport.clientHeight || 400;
+            const boardPx = boardPixelSize(size);
+
+            // If board fits in viewport, center it; otherwise scale to fit
+            const fitScale = Math.min(1, (vpW * 0.9) / boardPx, (vpH * 0.9) / boardPx);
+            scale = fitScale;
+            panX = (vpW - boardPx * scale) / 2;
+            panY = (vpH - boardPx * scale) / 2;
+            applyTransform();
+        }
     }
 
     function updateTurnStatus() {
         if (!currentGame || !turnStatus) return;
-        const isMyTurn = currentGame.players[currentGame.currentPlayer].userId === currentUserId;
+        const currentPlayerObj = currentGame.players[currentGame.currentPlayer];
+        const isMyTurn = currentPlayerObj && currentPlayerObj.userId === currentUserId;
         const onlineUsers = window._onlineUsers || [];
 
         if (currentGame.gameOver) {
             if (currentGame.winner === 'draw') {
                 turnStatus.textContent = 'Draw!';
                 turnStatus.style.color = '#888';
-            } else {
-                const winnerName = currentGame.players[currentGame.winner].username;
-                const iWon = currentGame.players[currentGame.winner].userId === currentUserId;
+            } else if (currentGame.winner) {
+                const winnerObj = currentGame.players[currentGame.winner];
+                const winnerName = winnerObj ? winnerObj.username : 'Unknown';
+                const iWon = winnerObj && winnerObj.userId === currentUserId;
                 turnStatus.textContent = iWon ? '🏆 You won!' : `${winnerName} won`;
                 turnStatus.style.color = iWon ? '#2ecc71' : '#e74c3c';
             }
@@ -254,10 +356,9 @@ const NTTT = (() => {
         if (isMyTurn) {
             turnStatus.textContent = 'Your turn';
             turnStatus.style.color = '#2ecc71';
-        } else {
-            const opponent = currentGame.players[currentGame.currentPlayer];
-            const isOnline = onlineUsers.some(u => u.userId === opponent.userId);
-            turnStatus.textContent = `Waiting for ${opponent.username} ${isOnline ? '🟢' : '⚫'}`;
+        } else if (currentPlayerObj) {
+            const isOnline = onlineUsers.some(u => u.userId === currentPlayerObj.userId);
+            turnStatus.textContent = `Waiting for ${currentPlayerObj.username} ${isOnline ? '🟢' : '⚫'}`;
             turnStatus.style.color = '#d4a574';
         }
     }
@@ -274,8 +375,10 @@ const NTTT = (() => {
         gameListEl.innerHTML = '';
         games.forEach(g => {
             const yourSymbol = g.yourSymbol;
-            const opponent = g.players[yourSymbol === 'X' ? 'O' : 'X'];
-            const isMyTurn = g.players[g.currentPlayer].userId === currentUserId;
+            const opponentSymbol = yourSymbol === 'X' ? 'O' : 'X';
+            const opponent = g.players && g.players[opponentSymbol];
+            if (!opponent) return;
+            const isMyTurn = g.players[g.currentPlayer] && g.players[g.currentPlayer].userId === currentUserId;
             const opOnline = onlineUsers.some(u => u.userId === opponent.userId);
 
             const card = document.createElement('div');
@@ -305,19 +408,19 @@ const NTTT = (() => {
         currentGame = game;
 
         if (gameTitle) gameTitle.textContent = game.gameName || 'Nested TTT';
-        if (gameListEl) gameListEl.parentElement.style.display = 'none';
-        if (boardArea) boardArea.style.display = 'flex';
 
-        // Reset pan/zoom
-        panX = 0; panY = 0; scale = 1;
-        applyTransform();
+        // Show board area, hide game list
+        const gameListParent = gameListEl ? gameListEl.parentElement : null;
+        if (gameListParent) gameListParent.style.display = 'none';
+        if (boardArea) boardArea.style.display = 'flex';
 
         renderCurrentGame();
     }
 
     window.ntttBackToList = function() {
         if (boardArea) boardArea.style.display = 'none';
-        if (gameListEl) gameListEl.parentElement.style.display = 'flex';
+        const gameListParent = gameListEl ? gameListEl.parentElement : null;
+        if (gameListParent) gameListParent.style.display = 'flex';
         currentGame = null;
         renderGameList();
     };
@@ -333,6 +436,9 @@ const NTTT = (() => {
         ws.send(JSON.stringify({ type: 'game-forfeit', gameId }));
         if (window._myActiveGames) window._myActiveGames.delete(gameId);
         renderGameList();
+        if (currentGame && currentGame.gameId === gameId) {
+            ntttBackToList();
+        }
     };
 
     // ---- Invites rendering ----
@@ -349,7 +455,7 @@ const NTTT = (() => {
                     const typeTag = isOpen ? ' <span style="font-size:0.72rem;color:#888;font-weight:normal;">(Open)</span>' : '';
                     return `
                     <div class="nttt-invite-card incoming">
-                        <div class="nttt-invite-card-title">⚔️ ${escapeHtmlNTTT(inv.challengerName || inv.challengerName)}${typeTag}</div>
+                        <div class="nttt-invite-card-title">⚔️ ${escapeHtmlNTTT(inv.challengerName || '')}${typeTag}</div>
                         <div class="nttt-invite-card-sub">${escapeHtmlNTTT(inv.gameName)}</div>
                         <div class="nttt-invite-btns">
                             <button class="nttt-invite-accept" onclick="ntttAcceptInvite('${inv.challengeId || inv.id}')">✓ Accept</button>
@@ -402,6 +508,7 @@ const NTTT = (() => {
             if (card) { card.remove(); pendingChallenges.delete(challengeId); }
         }
         refreshInvitesTab();
+        // Game will open automatically when server sends game-started
     };
 
     window.ntttDeclineInvite = function(challengeId) {
@@ -440,13 +547,28 @@ const NTTT = (() => {
     }
 
     // ---- Game state updates (called from app-cloudflare.js) ----
+
+    // Called when a game starts (either player accepted or we accepted)
     function onGameStarted(gameState, yourSymbol) {
         if (!window._myActiveGames) window._myActiveGames = new Map();
-        window._myActiveGames.set(gameState.gameId, { ...gameState, yourSymbol });
-        if (currentGame && currentGame.gameId === gameState.gameId) {
-            currentGame = { ...gameState, yourSymbol };
-            renderCurrentGame();
-        }
+        const fullGame = { ...gameState, yourSymbol };
+        window._myActiveGames.set(gameState.gameId, fullGame);
+
+        // AUTO-OPEN the game overlay and jump straight into the game board
+        currentGame = fullGame;
+        if (gameTitle) gameTitle.textContent = gameState.gameName || 'Nested TTT';
+
+        // Make sure overlay is open
+        if (overlay) overlay.classList.add('show');
+
+        // Switch to Continue tab and show board area
+        ntttShowTab('continue');
+
+        const gameListParent = gameListEl ? gameListEl.parentElement : null;
+        if (gameListParent) gameListParent.style.display = 'none';
+        if (boardArea) boardArea.style.display = 'flex';
+
+        renderCurrentGame();
         renderGameList();
         refreshInvitesTab();
     }
@@ -466,16 +588,17 @@ const NTTT = (() => {
 
     function onGameOver(gameState) {
         onGameUpdate(gameState);
-        // Remove after a delay
+        // Show result, then remove after delay
         setTimeout(() => {
             if (window._myActiveGames) window._myActiveGames.delete(gameState.gameId);
             renderGameList();
-        }, 10000);
+        }, 15000);
     }
 
     function onForfeit(gameId, forfeitedByName) {
         if (window._myActiveGames) window._myActiveGames.delete(gameId);
         if (currentGame && currentGame.gameId === gameId) {
+            currentGame = { ...currentGame, gameOver: true };
             if (turnStatus) {
                 turnStatus.textContent = `${forfeitedByName} forfeited`;
                 turnStatus.style.color = '#e74c3c';
@@ -488,20 +611,27 @@ const NTTT = (() => {
     function setupPanZoom() {
         if (!viewport) return;
 
-        // Mouse pan
+        // Mouse pan - only start panning if not clicking on a cell
         viewport.addEventListener('mousedown', e => {
-            if (e.target !== viewport && e.target !== boardRoot && !e.target.classList.contains('nttt-board')) return;
+            if (e.target.classList.contains('nttt-cell') && !e.target.classList.contains('inactive') && !e.target.classList.contains('taken')) return;
             isPanning = true;
             panStartX = e.clientX; panStartY = e.clientY;
             panStartPanX = panX; panStartPanY = panY;
+            viewport.style.cursor = 'grabbing';
+            e.preventDefault();
         });
+
         window.addEventListener('mousemove', e => {
             if (!isPanning) return;
             panX = panStartPanX + e.clientX - panStartX;
             panY = panStartPanY + e.clientY - panStartY;
             applyTransform();
         });
-        window.addEventListener('mouseup', () => { isPanning = false; });
+
+        window.addEventListener('mouseup', () => {
+            isPanning = false;
+            if (viewport) viewport.style.cursor = 'grab';
+        });
 
         // Wheel zoom
         viewport.addEventListener('wheel', e => {
@@ -540,7 +670,15 @@ const NTTT = (() => {
             }
         }, { passive: false });
 
-        viewport.addEventListener('touchend', () => { isPanning = false; });
+        viewport.addEventListener('touchend', e => {
+            if (e.touches.length < 1) isPanning = false;
+            else if (e.touches.length === 1) {
+                // Resumed single finger after pinch
+                isPanning = true;
+                panStartX = e.touches[0].clientX; panStartY = e.touches[0].clientY;
+                panStartPanX = panX; panStartPanY = panY;
+            }
+        });
     }
 
     function getTouchDist(touches) {
@@ -550,7 +688,7 @@ const NTTT = (() => {
     }
 
     function zoomAt(cx, cy, factor) {
-        const newScale = Math.max(0.2, Math.min(10, scale * factor));
+        const newScale = Math.max(0.1, Math.min(15, scale * factor));
         panX = cx - (cx - panX) * (newScale / scale);
         panY = cy - (cy - panY) * (newScale / scale);
         scale = newScale;
@@ -561,8 +699,18 @@ const NTTT = (() => {
         if (boardRoot) boardRoot.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     }
 
-    window.ntttZoom = function(f) { zoomAt(viewport ? viewport.clientWidth/2 : 200, viewport ? viewport.clientHeight/2 : 200, f); };
-    window.ntttZoomReset = function() { panX = 0; panY = 0; scale = 1; applyTransform(); };
+    window.ntttZoom = function(f) {
+        const cx = viewport ? viewport.clientWidth / 2 : 200;
+        const cy = viewport ? viewport.clientHeight / 2 : 200;
+        zoomAt(cx, cy, f);
+    };
+    window.ntttZoomReset = function() {
+        if (currentGame) {
+            renderCurrentGame(); // re-renders and resets transform
+        } else {
+            panX = 0; panY = 0; scale = 1; applyTransform();
+        }
+    };
 
     // ---- Public API ----
     return {
@@ -575,7 +723,7 @@ const NTTT = (() => {
         refreshPlayerDropdown,
         renderGameList,
         updateTurnStatus,
-        // Legacy compat (called from app-cloudflare.js)
+        openGame,
         updateAllUsers(allUsers, onlineUsers) {
             window._allUsersCache = allUsers;
             window._onlineUsers = onlineUsers;

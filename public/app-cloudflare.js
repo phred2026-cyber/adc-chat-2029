@@ -791,10 +791,12 @@ function handleNotifClick(notifId) {
     if (!notif) return;
     closeNotifications();
     if (notif.type === 'game-invite') {
-        // Show accept/decline dialog — for now just accept
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'game-accepted', challengeId: notif.challengeId }));
-        }
+        // Open NTTT Invites tab so user can accept/decline
+        window.openNTTT && window.openNTTT('invites');
+    } else if (notif.type === 'your-turn' && notif.gameId) {
+        // Open NTTT and jump to that game
+        window.openNTTT && window.openNTTT('continue');
+        if (typeof NTTT !== 'undefined') NTTT.openGame(notif.gameId);
     }
 }
 
@@ -886,10 +888,10 @@ function resumeGame(gameId) {
     const game = myActiveGames.get(gameId);
     if (!game) return;
     closeGameMenu();
-    // Re-open the game modal with this game's state
-    if (typeof UltimateTTT !== 'undefined') {
-        document.getElementById('gameModal').classList.add('show');
-        UltimateTTT.restoreGame(game, game.yourSymbol, currentUser.id);
+    // Open NTTT overlay and jump to this game
+    if (typeof NTTT !== 'undefined') {
+        window.openNTTT && window.openNTTT('continue');
+        NTTT.openGame(gameId);
     }
 }
 
