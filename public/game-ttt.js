@@ -158,6 +158,53 @@ const NTTT = (() => {
         return 3 * subSize + 2 * LEVEL_GAP + 8; // 8 = 4px padding each side
     }
 
+    // Win line combos: [cellA, cellB] endpoints for each of the 8 winning lines
+    const WIN_COMBOS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+    // Given the board's cell values (array of 9), find which combo was won by `winner`
+    function findWinCombo(cells, winner) {
+        for (const combo of WIN_COMBOS) {
+            if (combo.every(i => cells[i] === winner)) return combo;
+        }
+        return null;
+    }
+
+    // Build the virtual cells array for a non-leaf won board
+    // (looks at wonBoards for children to find which sub-boards the winner claimed)
+    function getVirtualCells(path, wonBoards) {
+        return Array(9).fill(null).map((_, i) => {
+            const childKey = [...path, i].join('-');
+            return (wonBoards && wonBoards[childKey]) || null;
+        });
+    }
+
+    // Create an SVG win-line overlay for a won board
+    // winner = 'X' | 'O', combo = [a, b, c] (3 cell indices)
+    function createWinLineSVG(winner, combo) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 3 3');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.classList.add('nttt-win-line-svg');
+
+        // Cell centers in 3×3 viewBox coordinates
+        const cx = i => (i % 3) + 0.5;
+        const cy = i => Math.floor(i / 3) + 0.5;
+
+        const a = combo[0], c = combo[2]; // first and last cell
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', cx(a));
+        line.setAttribute('y1', cy(a));
+        line.setAttribute('x2', cx(c));
+        line.setAttribute('y2', cy(c));
+        // X = gold, O = red
+        line.setAttribute('stroke', winner === 'X' ? '#d4a574' : '#e74c3c');
+        line.setAttribute('stroke-width', '0.22');
+        line.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(line);
+        return svg;
+    }
+
     // Recursively builds nested boards as DOM elements
     // `board` at size 0 is an array of 9 cells (null/'X'/'O')
     // at size N it's an array of 9 sub-boards (or null for empty)
@@ -176,29 +223,13 @@ const NTTT = (() => {
         const levelColor = LEVEL_COLORS[Math.min(depth, LEVEL_COLORS.length - 1)];
         el.style.borderColor = levelColor;
 
-        if (wonMark) {
-            el.classList.add(`won-${wonMark}`);
-            el.style.outline = `3px solid ${levelColor}`;
-            const mark = document.createElement('div');
-            mark.className = `nttt-won-mark ${wonMark}`;
-            mark.textContent = wonMark === 'draw' ? '—' : wonMark;
-            el.appendChild(mark);
-            // Size must still be set for layout purposes
-            const px = boardPixelSize(size);
-            el.style.width = px + 'px';
-            el.style.height = px + 'px';
-            return el;
-        }
-
-        // Free play: no active board restriction — all boards are always playable
-
-        // Set sizing
+        // Set sizing (always needed, whether won or not)
         const px = boardPixelSize(size);
         el.style.width = px + 'px';
         el.style.height = px + 'px';
 
         if (size === 0) {
-            // Leaf board: render 9 clickable cells
+            // Leaf board: render 9 cells (always, won or not)
             el.style.gap = BOARD_GAP + 'px';
             el.style.padding = '0';
             el.style.border = `2px solid ${levelColor}`;
@@ -214,6 +245,9 @@ const NTTT = (() => {
                 if (val) {
                     cell.classList.add('taken', val);
                     cell.textContent = val;
+                } else if (wonMark) {
+                    // Board is won — cells are not clickable
+                    cell.classList.add('inactive');
                 } else {
                     const canPlay = currentGame &&
                         !currentGame.gameOver &&
@@ -227,8 +261,17 @@ const NTTT = (() => {
                 }
                 el.appendChild(cell);
             }
+
+            // Draw win line overlay if this leaf board is won (not a draw)
+            if (wonMark && wonMark !== 'draw') {
+                const cells = board || Array(9).fill(null);
+                const combo = findWinCombo(cells, wonMark);
+                if (combo) {
+                    el.appendChild(createWinLineSVG(wonMark, combo));
+                }
+            }
         } else {
-            // Non-leaf board: render 9 sub-boards
+            // Non-leaf board: render 9 sub-boards (always, won or not)
             el.style.gap = LEVEL_GAP + 'px';
             el.style.padding = '4px';
             el.style.border = `3px solid ${levelColor}`;
@@ -238,6 +281,15 @@ const NTTT = (() => {
                 const subBoard = (board && board[i]) ? board[i] : emptyBoard(size - 1);
                 const subEl = renderBoard(subBoard, size - 1, childPath, activeBoard, wonBoards, depth - 1);
                 el.appendChild(subEl);
+            }
+
+            // Draw win line overlay if this non-leaf board is won (not a draw)
+            if (wonMark && wonMark !== 'draw') {
+                const virtualCells = getVirtualCells(path, wonBoards);
+                const combo = findWinCombo(virtualCells, wonMark);
+                if (combo) {
+                    el.appendChild(createWinLineSVG(wonMark, combo));
+                }
             }
         }
 
