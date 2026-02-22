@@ -10,14 +10,30 @@ function generateToken() {
 }
 
 // Format timestamp to Colorado time (America/Denver) in 24-hour format
-function formatTimestamp(timestamp) {
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
-    timeZone: 'America/Denver',
-    hour12: false,
+function formatTimestamp(ms) {
+  const date = new Date(ms);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+
+  const timeStr = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Denver'
   });
+
+  if (isToday) {
+    return timeStr;
+  }
+
+  const dateStr = date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Denver'
+  });
+
+  return `${dateStr} ${timeStr}`;
 }
 
 // Get JWT secret as CryptoKey
@@ -506,6 +522,8 @@ export default {
         }
         const newName = username.trim();
         await env.DB.prepare('UPDATE users SET username = ? WHERE id = ?').bind(newName, payload.userId).run();
+        // Update all past messages with the new username
+        await env.DB.prepare('UPDATE messages SET username = ? WHERE user_id = ?').bind(newName, payload.userId).run();
         return new Response(JSON.stringify({ success: true, username: newName }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -638,6 +656,7 @@ export class ChatRoom {
     this.sessions = [];
     this.games = new Map();      // gameId -> gameState
     this.challenges = new Map(); // challengeId -> challenge
+    this.pendingNotifications = new Map(); // userId -> array of notification objects
   }
   
   async fetch(request) {
@@ -707,11 +726,27 @@ export class ChatRoom {
       type: 'online-users',
       users: this.sessions.map(s => ({ userId: s.user.userId, username: s.user.username })),
     }));
-    
-    this.broadcast({
-      type: 'system-message',
-      text: `${user.username} joined the chat`,
-    }, session.id);
+
+    // Send pending notifications to this user
+    const pending = this.pendingNotifications.get(user.userId) || [];
+    if (pending.length > 0) {
+      websocket.send(JSON.stringify({
+        type: 'pending-notifications',
+        notifications: pending,
+      }));
+    }
+
+    // Only broadcast join message if this is user's first session ever (new account)
+    // We track this by checking if they've sent any messages before
+    const hasMessages = await this.env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM messages WHERE user_id = ?'
+    ).bind(user.userId).first();
+    if (!hasMessages || hasMessages.cnt === 0) {
+      this.broadcast({
+        type: 'system-message',
+        text: `${user.username} joined ADC 2029! 🎓`,
+      }, session.id);
+    }
     this.broadcastOnlineUsers();
     
     websocket.addEventListener('message', async (event) => {
@@ -931,13 +966,34 @@ export class ChatRoom {
           }
 
           // Switch player
-          game.currentPlayer = expectedPlayer === 'X' ? 'O' : 'X';
+          const nextPlayer = expectedPlayer === 'X' ? 'O' : 'X';
+          game.currentPlayer = nextPlayer;
 
           // Send updated state to both players
           const xId = game.players.X.userId;
           const oId = game.players.O.userId;
           this.sendToUser(xId, { type: 'game-state-update', gameState: game });
           this.sendToUser(oId, { type: 'game-state-update', gameState: game });
+
+          // Queue a notification for the next player if they're offline
+          if (!game.gameOver) {
+            const nextPlayerUserId = game.players[nextPlayer].userId;
+            const nextPlayerOnline = this.sessions.some(s => s.user.userId === nextPlayerUserId);
+            if (!nextPlayerOnline) {
+              if (!this.pendingNotifications.has(nextPlayerUserId)) {
+                this.pendingNotifications.set(nextPlayerUserId, []);
+              }
+              this.pendingNotifications.get(nextPlayerUserId).push({
+                id: Date.now().toString(),
+                type: 'your-turn',
+                gameId: gameId,
+                opponentName: game.players[expectedPlayer].username,
+                gameName: game.gameName,
+                timestamp: Date.now(),
+                read: false,
+              });
+            }
+          }
 
           if (game.gameOver) {
             // Broadcast to everyone that game ended
@@ -962,6 +1018,8 @@ export class ChatRoom {
               challengeId,
             });
           }
+        } else if (data.type === 'notifications-read') {
+          this.pendingNotifications.set(user.userId, []);
         }
       } catch (err) {
         console.error('Error handling message:', err);
@@ -1010,10 +1068,12 @@ export class ChatRoom {
   }
 
   broadcastOnlineUsers() {
+    const onlineUserIds = new Set(this.sessions.map(s => s.user.userId));
     const users = this.sessions.map(s => ({
       userId: s.user.userId,
       username: s.user.username,
     }));
+    // Include game opponent online status
     this.broadcast({ type: 'online-users', users });
   }
 }

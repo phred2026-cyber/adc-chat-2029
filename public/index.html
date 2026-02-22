@@ -23,6 +23,11 @@
                     <div class="status-dot" id="statusDot"></div>
                     <span id="statusText">Connecting...</span>
                 </div>
+                <!-- Bell notification button -->
+                <div class="bell-wrapper" style="position:relative;">
+                    <button class="header-bell-btn" id="headerBellBtn" aria-label="Notifications">🔔</button>
+                    <span class="bell-badge" id="bellBadge" style="display:none;">0</span>
+                </div>
                 <!-- Mobile: settings gear in header -->
                 <button class="header-settings-btn" id="headerSettingsBtn" aria-label="Settings">⚙️</button>
             </div>
@@ -110,6 +115,18 @@
         </div>
     </div>
 
+    <!-- Notifications panel -->
+    <div class="notifications-overlay" id="notificationsOverlay"></div>
+    <div class="notifications-panel" id="notificationsPanel">
+        <div class="notifications-header">
+            <h3>🔔 Notifications</h3>
+            <button class="notifications-close" id="notificationsClose">✕</button>
+        </div>
+        <div class="notifications-list" id="notificationsList">
+            <div style="text-align:center;color:#888;padding:20px;">No notifications</div>
+        </div>
+    </div>
+
     <!-- Delete confirmation modal -->
     <div class="modal-overlay" id="deleteModal" role="dialog" aria-label="Confirm delete">
         <div class="modal">
@@ -153,6 +170,11 @@
             <button class="game-menu-close" onclick="closeGameMenu()">✕</button>
         </div>
         <div class="game-menu-content">
+            <!-- Ongoing games section -->
+            <div id="ongoingGamesSection" style="margin-bottom:12px;display:none;">
+                <div style="font-size:0.78rem;font-weight:bold;color:#d4a574;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">📋 Your Active Games</div>
+                <div id="ongoingGamesList"></div>
+            </div>
             <div class="game-card">
                 <div class="game-card-title">🟦 Ultimate Tic-Tac-Toe</div>
                 <div class="game-card-desc">9 boards in a grid — win 3 boards to win the match!</div>

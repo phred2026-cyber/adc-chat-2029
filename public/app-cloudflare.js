@@ -12,6 +12,9 @@ let isTyping = false;
 let typingUsers = new Set();
 let typingStopTimeout = null;
 let onlineUsers = [];
+let notifications = []; // array of notification objects
+let notificationsUnread = 0;
+let myActiveGames = new Map(); // gameId -> gameState with yourSymbol
 // Track invite cards in chat
 const pendingChallenges = new Map(); // challengeId -> DOM element
 
@@ -697,6 +700,129 @@ if (membersClose) membersClose.addEventListener('click', () => membersOverlay.cl
 if (membersOverlay) membersOverlay.addEventListener('click', e => { if (e.target === membersOverlay) membersOverlay.classList.remove('show'); });
 
 // ============================================================
+// BELL / NOTIFICATIONS
+// ============================================================
+const headerBellBtn = document.getElementById('headerBellBtn');
+const bellBadge = document.getElementById('bellBadge');
+const notificationsOverlay = document.getElementById('notificationsOverlay');
+const notificationsPanel = document.getElementById('notificationsPanel');
+const notificationsClose = document.getElementById('notificationsClose');
+const notificationsList = document.getElementById('notificationsList');
+
+function updateBellUI() {
+    if (!bellBadge || !headerBellBtn) return;
+    if (notificationsUnread > 0) {
+        bellBadge.style.display = 'flex';
+        bellBadge.textContent = notificationsUnread;
+        headerBellBtn.classList.add('has-unread');
+    } else {
+        bellBadge.style.display = 'none';
+        headerBellBtn.classList.remove('has-unread');
+    }
+}
+
+function addNotification(notif) {
+    notifications.unshift(notif);
+    notificationsUnread++;
+    updateBellUI();
+    renderNotifications();
+}
+
+function renderNotifications() {
+    if (!notificationsList) return;
+    if (notifications.length === 0) {
+        notificationsList.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">No notifications</div>';
+        return;
+    }
+    notificationsList.innerHTML = notifications.map(n => {
+        let title, body;
+        if (n.type === 'your-turn') {
+            title = '🎮 Your Turn!';
+            body = `${n.opponentName} played in ${n.gameName}`;
+        } else if (n.type === 'game-invite') {
+            title = '⚔️ Game Invite';
+            body = `${n.challengerName} challenged you to ${n.gameName}`;
+        } else {
+            title = '🔔 Notification';
+            body = n.text || '';
+        }
+        return `<div class="notification-item ${n.read ? '' : 'unread'}" data-notif-id="${n.id}" onclick="handleNotifClick('${n.id}')">
+            <div class="notification-title">${title}</div>
+            <div class="notification-body">${body}</div>
+        </div>`;
+    }).join('');
+}
+
+function openNotifications() {
+    notificationsPanel.classList.add('show');
+    notificationsOverlay.classList.add('show');
+    // Mark all as read
+    notifications.forEach(n => n.read = true);
+    notificationsUnread = 0;
+    updateBellUI();
+    renderNotifications();
+    // Tell server they're read
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'notifications-read' }));
+    }
+}
+
+function closeNotifications() {
+    notificationsPanel.classList.remove('show');
+    notificationsOverlay.classList.remove('show');
+}
+
+function handleNotifClick(notifId) {
+    const notif = notifications.find(n => n.id === notifId);
+    if (!notif) return;
+    closeNotifications();
+    if (notif.type === 'game-invite') {
+        // Show accept/decline dialog — for now just accept
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'game-accepted', challengeId: notif.challengeId }));
+        }
+    }
+}
+
+if (headerBellBtn) headerBellBtn.addEventListener('click', openNotifications);
+if (notificationsClose) notificationsClose.addEventListener('click', closeNotifications);
+if (notificationsOverlay) notificationsOverlay.addEventListener('click', closeNotifications);
+
+// ============================================================
+// ONGOING GAMES PANEL
+// ============================================================
+function updateOngoingGamesUI() {
+    const section = document.getElementById('ongoingGamesSection');
+    const list = document.getElementById('ongoingGamesList');
+    if (!section || !list) return;
+    if (myActiveGames.size === 0) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = 'block';
+    list.innerHTML = Array.from(myActiveGames.values()).map(g => {
+        const opponent = g.players[g.yourSymbol === 'X' ? 'O' : 'X'];
+        const isMyTurn = g.players[g.currentPlayer].userId === currentUser.id;
+        const opponentOnline = onlineUsers.some(u => u.userId === opponent.userId);
+        return `<div class="ongoing-game-row" onclick="resumeGame('${g.gameId}')">
+            <span>${g.gameName || 'Game'} vs ${opponent.username}</span>
+            <span style="font-size:0.75rem;color:${opponentOnline ? '#2ecc71' : '#888'}">${opponentOnline ? '🟢' : '⚫'} ${isMyTurn ? '— YOUR TURN' : "— their turn"}</span>
+        </div>`;
+    }).join('');
+}
+
+function resumeGame(gameId) {
+    const game = myActiveGames.get(gameId);
+    if (!game) return;
+    closeGameMenu();
+    // Re-open the game modal with this game's state
+    if (typeof UltimateTTT !== 'undefined') {
+        document.getElementById('gameModal').classList.add('show');
+        UltimateTTT.restoreGame(game, game.yourSymbol, currentUser.id);
+    }
+}
+
+// ============================================================
 // IMAGE CROPPER (settings)
 // ============================================================
 const CropperModal = (() => {
@@ -1104,11 +1230,30 @@ function connectWebSocket() {
                 removeMessage(data.messageId);
             } else if (data.type === 'online-users') {
                 onlineUsers = data.users || [];
+                window._onlineUsers = onlineUsers;
                 if (typeof GameMenu !== 'undefined') GameMenu.updateOnlineUsers(onlineUsers);
                 // Refresh members list if it's open
                 if (membersOverlay && membersOverlay.classList.contains('show')) openMembersList();
+                // Refresh ongoing games UI (opponent online status may have changed)
+                updateOngoingGamesUI();
+            } else if (data.type === 'pending-notifications') {
+                data.notifications.forEach(n => addNotification(n));
             } else if (data.type === 'game-challenge') {
-                handleIncomingChallenge(data.challenge);
+                if (data.challenge.targetUserId && data.challenge.targetUserId === currentUser.id) {
+                    // Private invite — goes to bell
+                    addNotification({
+                        id: data.challenge.id,
+                        type: 'game-invite',
+                        challengeId: data.challenge.id,
+                        challengerName: data.challenge.challengerName,
+                        gameName: data.challenge.gameName,
+                        read: false,
+                        timestamp: Date.now(),
+                    });
+                } else {
+                    // Open challenge — goes to chat as before
+                    handleIncomingChallenge(data.challenge);
+                }
             } else if (data.type === 'game-challenge-accepted') {
                 // Remove the invite card from chat
                 const card = pendingChallenges.get(data.challengeId);
@@ -1129,11 +1274,22 @@ function connectWebSocket() {
                 for (const [key, card] of pendingChallenges) {
                     if (key.startsWith('own_')) { card.remove(); pendingChallenges.delete(key); }
                 }
+                myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: data.yourSymbol });
+                updateOngoingGamesUI();
                 if (typeof UltimateTTT !== 'undefined') {
                     UltimateTTT.init(ws);
                     UltimateTTT.startGame(data.gameState, data.yourSymbol);
                 }
             } else if (data.type === 'game-state-update') {
+                if (myActiveGames.has(data.gameState.gameId)) {
+                    const existing = myActiveGames.get(data.gameState.gameId);
+                    myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: existing.yourSymbol });
+                    updateOngoingGamesUI();
+                }
+                if (data.gameState.gameOver) {
+                    myActiveGames.delete(data.gameState.gameId);
+                    updateOngoingGamesUI();
+                }
                 if (typeof UltimateTTT !== 'undefined') {
                     UltimateTTT.updateState(data.gameState);
                 }

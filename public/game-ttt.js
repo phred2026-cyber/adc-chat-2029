@@ -71,7 +71,10 @@ const UltimateTTT = (() => {
           statusEl.textContent = '✨ Your turn';
           statusEl.className = 'game-turn-status your-turn';
         } else {
-          statusEl.textContent = `${currentUsername} is thinking...`;
+          const onlineUsers = window._onlineUsers || [];
+          const opponentOnline = onlineUsers.some(u => u.username === currentUsername);
+          const onlineIndicator = opponentOnline ? ' 🟢' : ' ⚫';
+          statusEl.textContent = `${currentUsername}${onlineIndicator} is thinking...`;
           statusEl.className = 'game-turn-status their-turn';
         }
       }
@@ -202,7 +205,13 @@ const UltimateTTT = (() => {
     return gameState ? gameState.gameId : null;
   }
 
-  return { init, startGame, updateState, closeGame, getGameId };
+  function restoreGame(state, symbol) {
+    gameState = state;
+    mySymbol = symbol;
+    render();
+  }
+
+  return { init, startGame, updateState, closeGame, getGameId, restoreGame };
 })();
 
 // ============================================================
