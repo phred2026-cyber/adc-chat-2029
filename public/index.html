@@ -162,61 +162,82 @@
         </div>
     </div>
 
-    <!-- Game Menu -->
-    <div class="game-menu-overlay" id="gameMenuOverlay" onclick="closeGameMenu()"></div>
-    <div class="game-menu" id="gameMenu" role="dialog" aria-label="Game Menu">
-        <div class="game-menu-header">
-            <h3>🎮 Games</h3>
-            <button class="game-menu-close" onclick="closeGameMenu()">✕</button>
+    <!-- Nested Tic-Tac-Toe Full Screen -->
+    <div class="nttt-overlay" id="ntttOverlay">
+        <!-- Top bar -->
+        <div class="nttt-topbar">
+            <div class="nttt-tabs">
+                <button class="nttt-tab active" id="ntttTabContinue" onclick="ntttShowTab('continue')">Continue</button>
+                <button class="nttt-tab" id="ntttTabInvites" onclick="ntttShowTab('invites')">
+                    Invites
+                    <span class="nttt-tab-badge" id="ntttInvitesBadge" style="display:none;">0</span>
+                </button>
+                <button class="nttt-tab" id="ntttTabNew" onclick="ntttShowTab('new')">New</button>
+            </div>
+            <button class="nttt-close" onclick="closeNTTT()">✕</button>
         </div>
-        <div class="game-menu-body">
-            <!-- Pending invites section -->
-            <div id="gameMenuInvites" style="display:none;">
-                <div class="game-menu-section-label">⚔️ Invites</div>
-                <div id="gameMenuInvitesList"></div>
-            </div>
 
-            <!-- Ongoing games section -->
-            <div id="ongoingGamesSection" style="display:none;">
-                <div class="game-menu-section-label">📋 Your Active Games</div>
-                <div id="ongoingGamesList"></div>
+        <!-- CONTINUE TAB -->
+        <div class="nttt-panel" id="ntttPanelContinue">
+            <div class="nttt-game-list" id="ntttGameList">
+                <div class="nttt-empty">No active games. Start one in New!</div>
             </div>
-
-            <!-- New game -->
-            <div class="game-menu-section-label">🆕 New Game</div>
-            <div class="game-card">
-                <div class="game-card-title">🟦 Ultimate Tic-Tac-Toe</div>
-                <div class="game-card-desc">9 boards in a grid — win 3 boards to win the match!</div>
-                <div class="game-card-actions">
-                    <div class="challenge-someone-row">
-                        <select id="challengeUserSelect" class="challenge-select">
-                            <option value="">-- Pick a player --</option>
-                        </select>
-                        <button class="game-action-btn primary" onclick="sendTargetedChallenge()">Challenge!</button>
+            <!-- Active game board (shown when a game is open) -->
+            <div class="nttt-board-area" id="ntttBoardArea" style="display:none;">
+                <div class="nttt-game-header">
+                    <button class="nttt-back-btn" onclick="ntttBackToList()">← Games</button>
+                    <div class="nttt-game-info">
+                        <span class="nttt-game-title" id="ntttGameTitle">Nested Tic-Tac-Toe</span>
+                        <span class="nttt-turn-status" id="ntttTurnStatus">Your turn</span>
                     </div>
-                    <button class="game-action-btn secondary" onclick="sendOpenChallenge()">📢 Open Challenge</button>
+                    <button class="nttt-forfeit-btn" onclick="ntttForfeit()">🏳 Forfeit</button>
+                </div>
+                <!-- Zoom/pan container -->
+                <div class="nttt-viewport" id="ntttViewport">
+                    <div class="nttt-board-root" id="ntttBoardRoot"></div>
+                </div>
+                <div class="nttt-zoom-controls">
+                    <button onclick="ntttZoom(1.2)">＋</button>
+                    <button onclick="ntttZoomReset()">⟲</button>
+                    <button onclick="ntttZoom(0.8)">－</button>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Game Modal (Ultimate Tic-Tac-Toe board) -->
-    <div class="game-modal-overlay" id="gameModal" role="dialog" aria-label="Ultimate Tic-Tac-Toe">
-        <div class="game-modal">
-            <div class="game-modal-header">
-                <div class="game-players-row">
-                    <span class="player-label x" id="playerXLabel">Player X</span>
-                    <span class="game-vs">vs</span>
-                    <span class="player-label o" id="playerOLabel">Player O</span>
-                </div>
-                <button class="game-modal-close" onclick="closeGameModal()">✕</button>
+        <!-- INVITES TAB -->
+        <div class="nttt-panel" id="ntttPanelInvites" style="display:none;">
+            <div class="nttt-invites-section">
+                <div class="nttt-section-label">Incoming</div>
+                <div id="ntttIncomingList"><div class="nttt-empty">No incoming invites</div></div>
             </div>
-            <div class="game-turn-status your-turn" id="gameTurnStatus">Your turn</div>
-            <div class="big-board" id="bigBoard"></div>
-            <div class="game-over-overlay" id="gameOverOverlay">
-                <div class="game-over-text" id="gameOverText">Game Over</div>
-                <button class="game-over-btn" onclick="gamePlayAgain()">🎮 Play Again</button>
-                <button class="game-over-btn secondary" onclick="closeGameModal()">Close</button>
+            <div class="nttt-invites-section">
+                <div class="nttt-section-label">Outgoing</div>
+                <div id="ntttOutgoingList"><div class="nttt-empty">No outgoing invites</div></div>
+            </div>
+        </div>
+
+        <!-- NEW GAME TAB -->
+        <div class="nttt-panel" id="ntttPanelNew" style="display:none;">
+            <div class="nttt-new-form">
+                <div class="nttt-field">
+                    <label>Challenge</label>
+                    <select id="ntttPlayerSelect" class="nttt-select">
+                        <option value="">-- Pick a player --</option>
+                        <option value="open">📢 Open Challenge (anyone)</option>
+                    </select>
+                </div>
+                <div class="nttt-field">
+                    <label>Size: <span id="ntttSizeLabel">1</span>
+                        <span class="nttt-size-hint" id="ntttSizeHint">(9 boards → 81 cells)</span>
+                    </label>
+                    <div class="nttt-size-controls">
+                        <button class="nttt-size-btn" onclick="ntttChangeSize(-1)">−</button>
+                        <input type="range" id="ntttSizeSlider" min="0" max="9" value="1" class="nttt-slider" oninput="ntttSetSize(parseInt(this.value))">
+                        <button class="nttt-size-btn" onclick="ntttChangeSize(1)">+</button>
+                    </div>
+                    <div class="nttt-size-desc" id="ntttSizeDesc">9 boards in a 3×3 grid. Win 3 boards in a row to win.</div>
+                </div>
+                <button class="nttt-send-btn" onclick="ntttSendChallenge()">⚔️ Send Challenge</button>
             </div>
         </div>
     </div>

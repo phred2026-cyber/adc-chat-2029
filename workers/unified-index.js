@@ -818,8 +818,9 @@ export class ChatRoom {
             id: challengeId,
             challengerId: user.userId,
             challengerName: user.username,
-            game: data.game || 'ultimate-ttt',
-            gameName: data.gameName || 'Ultimate Tic-Tac-Toe',
+            game: data.game || 'nested-ttt',
+            gameName: data.gameName || `Nested TTT (Size ${data.size !== undefined ? data.size : 1})`,
+            size: data.size !== undefined ? data.size : 1,
             targetUserId: data.targetUserId || null, // null = open
             createdAt: Date.now(),
           };
@@ -857,16 +858,24 @@ export class ChatRoom {
 
           // Create game — challenger is X, accepter is O
           const gameId = generateGameId();
+
+          function createNestedBoard(size) {
+            if (size === 0) return Array(9).fill(null);
+            return Array(9).fill(null).map(() => createNestedBoard(size - 1));
+          }
+
           const gameState = {
             gameId,
             game: challenge.game,
             gameName: challenge.gameName,
+            size: challenge.size !== undefined ? challenge.size : 1,
             players: {
               X: { userId: challenge.challengerId, username: challenge.challengerName },
               O: { userId: user.userId, username: user.username },
             },
-            bigBoard: Array(9).fill(null),
-            smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
+            board: createNestedBoard(challenge.size !== undefined ? challenge.size : 1),
+            wonBoards: {},       // boardKey -> 'X'/'O'/'draw'
+            activeBoard: null,   // array of indices, null = play anywhere
             currentPlayer: 'X',
             gameOver: false,
             winner: null,
@@ -916,77 +925,118 @@ export class ChatRoom {
           });
 
         } else if (data.type === 'game-move') {
-          const { gameId, boardIndex, cellIndex } = data;
+          const { gameId, boardPath, cellIndex } = data;
           const game = this.games.get(gameId);
           if (!game) {
             websocket.send(JSON.stringify({ type: 'game-error', error: 'Game not found' }));
             return;
           }
           if (game.gameOver) {
-            websocket.send(JSON.stringify({ type: 'game-error', error: 'Game is already over' }));
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Game over' }));
             return;
           }
 
-          // Validate it's this player's turn
           const expectedPlayer = game.currentPlayer;
-          const expectedUserId = game.players[expectedPlayer].userId;
-          if (user.userId !== expectedUserId) {
+          if (game.players[expectedPlayer].userId !== user.userId) {
             websocket.send(JSON.stringify({ type: 'game-error', error: 'Not your turn' }));
             return;
           }
 
-          // Validate board/cell
-          if (boardIndex < 0 || boardIndex > 8 || cellIndex < 0 || cellIndex > 8) {
-            websocket.send(JSON.stringify({ type: 'game-error', error: 'Invalid move' }));
-            return;
-          }
-          if (game.bigBoard[boardIndex] !== null) {
-            websocket.send(JSON.stringify({ type: 'game-error', error: 'Board already won' }));
-            return;
-          }
-          if (game.smallBoards[boardIndex][cellIndex] !== null) {
-            websocket.send(JSON.stringify({ type: 'game-error', error: 'Cell already taken' }));
-            return;
-          }
-
-          // Make the move
-          game.smallBoards[boardIndex][cellIndex] = expectedPlayer;
-
-          // Check if small board won
-          const smallResult = checkSmallBoard(game.smallBoards[boardIndex]);
-          if (smallResult) {
-            game.bigBoard[boardIndex] = smallResult;
-          }
-
-          // Check big board
-          const bigResult = checkBigBoard(game.bigBoard);
-          if (bigResult) {
-            game.gameOver = true;
-            game.winner = bigResult;
-          }
-
-          // Switch player
-          const nextPlayer = expectedPlayer === 'X' ? 'O' : 'X';
-          game.currentPlayer = nextPlayer;
-
-          // Send updated state to both players
-          const xId = game.players.X.userId;
-          const oId = game.players.O.userId;
-          this.sendToUser(xId, { type: 'game-state-update', gameState: game });
-          this.sendToUser(oId, { type: 'game-state-update', gameState: game });
-
-          // Queue a notification for the next player if they're offline
-          if (!game.gameOver) {
-            const nextPlayerUserId = game.players[nextPlayer].userId;
-            const nextPlayerOnline = this.sessions.some(s => s.user.userId === nextPlayerUserId);
-            if (!nextPlayerOnline) {
-              if (!this.pendingNotifications.has(nextPlayerUserId)) {
-                this.pendingNotifications.set(nextPlayerUserId, []);
+          // Validate move is in active board
+          if (game.activeBoard !== null) {
+            for (let i = 0; i < game.activeBoard.length; i++) {
+              if (game.activeBoard[i] !== null && boardPath[i] !== game.activeBoard[i]) {
+                websocket.send(JSON.stringify({ type: 'game-error', error: 'Must play in active board' }));
+                return;
               }
-              this.pendingNotifications.get(nextPlayerUserId).push({
+            }
+          }
+
+          // Apply move recursively
+          function setCell(board, path, idx, symbol) {
+            if (path.length === 0) {
+              if (board[idx] !== null) return false;
+              board[idx] = symbol;
+              return true;
+            }
+            return setCell(board[path[0]], path.slice(1), idx, symbol);
+          }
+
+          const moved = setCell(game.board, boardPath, cellIndex, expectedPlayer);
+          if (!moved) {
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'Cell taken' }));
+            return;
+          }
+
+          // Check if the current (leaf) board is won
+          function checkWin(cells) {
+            const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            for (const [a,b,c] of wins) {
+              if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
+            }
+            if (cells.every(c => c !== null)) return 'draw';
+            return null;
+          }
+
+          function getBoard(board, path) {
+            if (path.length === 0) return board;
+            return getBoard(board[path[0]], path.slice(1));
+          }
+
+          // Check win for the leaf board and propagate up
+          const leafBoard = getBoard(game.board, boardPath);
+          const leafResult = checkWin(leafBoard);
+          if (leafResult) {
+            game.wonBoards[boardPath.join('-')] = leafResult;
+            // Propagate upward
+            for (let depth = boardPath.length - 1; depth >= 0; depth--) {
+              const parentPath = boardPath.slice(0, depth);
+              const parentKey = parentPath.join('-');
+              if (game.wonBoards[parentKey]) break;
+              const parentBoard = getBoard(game.board, parentPath);
+              // Build virtual cells from wonBoards at this level
+              const virtualCells = parentBoard.map((_, i) => {
+                const childKey = [...parentPath, i].join('-');
+                return game.wonBoards[childKey] || null;
+              });
+              const parentResult = checkWin(virtualCells);
+              if (parentResult) {
+                game.wonBoards[parentKey] = parentResult;
+              }
+            }
+            // Check top-level win
+            const topVirtual = Array(9).fill(null).map((_, i) => game.wonBoards[String(i)] || null);
+            const topResult = checkWin(topVirtual);
+            if (topResult) {
+              game.gameOver = true;
+              game.winner = topResult === 'draw' ? 'draw' : expectedPlayer;
+            }
+          }
+
+          // Set next active board = the cell index the player just played
+          // (standard Ultimate TTT rule — if that board is won, play anywhere)
+          if (!game.gameOver) {
+            const nextBoardKey = [...boardPath.slice(0, -1), cellIndex].join('-');
+            const nextBoardWon = game.wonBoards[nextBoardKey];
+            game.activeBoard = nextBoardWon ? null : [...boardPath.slice(0, -1), cellIndex];
+            game.currentPlayer = expectedPlayer === 'X' ? 'O' : 'X';
+          }
+
+          // Broadcast game state update
+          const updateMsg = { type: game.gameOver ? 'game-over' : 'game-state-update', gameState: game };
+          this.broadcast(updateMsg);
+
+          // Pending notification for offline player
+          if (!game.gameOver) {
+            const nextUserId = game.players[game.currentPlayer].userId;
+            const nextOnline = this.sessions.some(s => s.user.userId === nextUserId);
+            if (!nextOnline) {
+              if (!this.pendingNotifications) this.pendingNotifications = new Map();
+              if (!this.pendingNotifications.has(nextUserId)) this.pendingNotifications.set(nextUserId, []);
+              this.pendingNotifications.get(nextUserId).push({
                 id: Date.now().toString(),
                 type: 'your-turn',
-                gameId: gameId,
+                gameId,
                 opponentName: game.players[expectedPlayer].username,
                 gameName: game.gameName,
                 timestamp: Date.now(),
@@ -996,7 +1046,7 @@ export class ChatRoom {
           }
 
           if (game.gameOver) {
-            // Broadcast to everyone that game ended
+            // Broadcast game-over-announce for the chat system message
             this.broadcast({
               type: 'game-over-announce',
               gameId,
@@ -1007,6 +1057,21 @@ export class ChatRoom {
             // Cleanup after 1 minute
             setTimeout(() => this.games.delete(gameId), 60 * 1000);
           }
+
+        } else if (data.type === 'game-forfeit') {
+          const { gameId } = data;
+          const game = this.games.get(gameId);
+          if (!game) return;
+          // Check player is in this game
+          const isPlayer = Object.values(game.players).some(p => p.userId === user.userId);
+          if (!isPlayer) return;
+          this.games.delete(gameId);
+          this.broadcast({
+            type: 'game-forfeit-notify',
+            gameId,
+            forfeitedByUserId: user.userId,
+            forfeitedByName: user.username,
+          });
 
         } else if (data.type === 'game-cancelled') {
           const { challengeId } = data;

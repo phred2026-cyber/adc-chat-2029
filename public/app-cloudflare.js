@@ -726,9 +726,11 @@ function updateBellUI() {
 
 function addNotification(notif) {
     notifications.unshift(notif);
+    window._notifications = notifications;
     notificationsUnread++;
     updateBellUI();
     renderNotifications();
+    if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
 }
 
 function renderNotifications() {
@@ -854,6 +856,8 @@ function acceptGameInvite(challengeId) {
     }
     // Remove from notifications
     notifications = notifications.filter(n => n.challengeId !== challengeId);
+    window._notifications = notifications;
+    if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
     updateGameMenuInvites();
     updateBellUI();
 }
@@ -863,6 +867,8 @@ function declineGameInvite(challengeId) {
         ws.send(JSON.stringify({ type: 'game-declined', challengeId }));
     }
     notifications = notifications.filter(n => n.challengeId !== challengeId);
+    window._notifications = notifications;
+    if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
     updateGameMenuInvites();
     updateBellUI();
 }
@@ -1256,8 +1262,7 @@ function connectWebSocket() {
         setStatus('connected');
         if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
         // Wire up game components
-        if (typeof UltimateTTT !== 'undefined') UltimateTTT.init(ws);
-        if (typeof GameMenu !== 'undefined') GameMenu.init(ws, currentUser);
+        if (typeof NTTT !== 'undefined' && currentUser) NTTT.init(ws, currentUser.id);
     };
 
     ws.onmessage = (event) => {
@@ -1287,15 +1292,11 @@ function connectWebSocket() {
             } else if (data.type === 'online-users') {
                 onlineUsers = data.users || [];
                 window._onlineUsers = onlineUsers;
-                if (typeof GameMenu !== 'undefined') GameMenu.updateOnlineUsers(onlineUsers);
-                // Update challenge dropdown if we have all users cached
-                if (allUsersCache.length > 0 && typeof GameMenu !== 'undefined') {
-                    GameMenu.updateAllUsers(allUsersCache, onlineUsers);
+                if (allUsersCache.length > 0 && typeof NTTT !== 'undefined') {
+                    NTTT.updateAllUsers(allUsersCache, onlineUsers);
                 }
                 // Refresh members list if it's open
                 if (membersOverlay && membersOverlay.classList.contains('show')) openMembersList();
-                // Refresh ongoing games UI (opponent online status may have changed)
-                updateOngoingGamesUI();
             } else if (data.type === 'pending-notifications') {
                 data.notifications.forEach(n => addNotification(n));
             } else if (data.type === 'game-challenge') {
@@ -1314,15 +1315,6 @@ function connectWebSocket() {
                     // Open challenge — goes to chat as before
                     handleIncomingChallenge(data.challenge);
                 }
-            } else if (data.type === 'game-challenge-accepted') {
-                // Remove the invite card from chat
-                const card = pendingChallenges.get(data.challengeId);
-                if (card) {
-                    card.remove();
-                    pendingChallenges.delete(data.challengeId);
-                }
-                // Show system message
-                addSystemMessage(`${data.player1} vs ${data.player2} — game started!`);
             } else if (data.type === 'game-challenge-removed') {
                 const card = pendingChallenges.get(data.challengeId);
                 if (card) {
@@ -1335,24 +1327,47 @@ function connectWebSocket() {
                     if (key.startsWith('own_')) { card.remove(); pendingChallenges.delete(key); }
                 }
                 myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: data.yourSymbol });
-                updateOngoingGamesUI();
-                if (typeof UltimateTTT !== 'undefined') {
-                    UltimateTTT.init(ws);
-                    UltimateTTT.startGame(data.gameState, data.yourSymbol);
-                }
+                window._myActiveGames = myActiveGames;
+                if (typeof NTTT !== 'undefined') NTTT.onGameStarted(data.gameState, data.yourSymbol);
             } else if (data.type === 'game-state-update') {
                 if (myActiveGames.has(data.gameState.gameId)) {
                     const existing = myActiveGames.get(data.gameState.gameId);
                     myActiveGames.set(data.gameState.gameId, { ...data.gameState, yourSymbol: existing.yourSymbol });
-                    updateOngoingGamesUI();
+                    window._myActiveGames = myActiveGames;
                 }
-                if (data.gameState.gameOver) {
-                    myActiveGames.delete(data.gameState.gameId);
-                    updateOngoingGamesUI();
+                if (typeof NTTT !== 'undefined') NTTT.onGameUpdate(data.gameState);
+            } else if (data.type === 'game-over') {
+                if (typeof NTTT !== 'undefined') NTTT.onGameOver(data.gameState);
+                // Queue notification if not the winner
+                if (data.gameState.winner && data.gameState.winner !== 'draw' &&
+                    data.gameState.players[data.gameState.winner].userId !== currentUser.id) {
+                    addNotification({
+                        id: Date.now().toString(),
+                        type: 'game-over',
+                        text: `Game over: ${data.gameState.players[data.gameState.winner].username} won`,
+                        read: false,
+                        timestamp: Date.now(),
+                    });
                 }
-                if (typeof UltimateTTT !== 'undefined') {
-                    UltimateTTT.updateState(data.gameState);
+            } else if (data.type === 'game-forfeit-notify') {
+                if (typeof NTTT !== 'undefined') NTTT.onForfeit(data.gameId, data.forfeitedByName);
+                addNotification({
+                    id: Date.now().toString(),
+                    type: 'forfeit',
+                    text: `${data.forfeitedByName} forfeited the game`,
+                    read: false,
+                    timestamp: Date.now(),
+                });
+            } else if (data.type === 'game-challenge-accepted') {
+                // Remove from outgoing challenges
+                if (window._outgoingChallenges) {
+                    window._outgoingChallenges = window._outgoingChallenges.filter(c => c.challengeId !== data.challengeId);
                 }
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
+                // remove invite card from chat if it was open
+                const card = pendingChallenges.get(data.challengeId);
+                if (card) { card.remove(); pendingChallenges.delete(data.challengeId); }
+                addSystemMessage(`${data.player1} vs ${data.player2} — game started!`);
             } else if (data.type === 'game-declined') {
                 showToast(`${data.declinedBy} declined your challenge`);
             } else if (data.type === 'game-over-announce') {
@@ -1636,18 +1651,8 @@ function showToast(msg) {
 
 // Game menu handlers (called from HTML)
 function openGameMenu() {
-    if (typeof GameMenu !== 'undefined') {
-        GameMenu.init(ws, currentUser);
-        GameMenu.open();
-    }
-    const overlay = document.getElementById('gameMenuOverlay');
-    if (overlay) overlay.classList.add('show');
-    const menu = document.getElementById('gameMenu');
-    if (menu) menu.classList.add('show');
-    updateOngoingGamesUI();
-    updateGameMenuInvites();
-
-    // Fetch all users for challenge dropdown
+    window.openNTTT && window.openNTTT('continue');
+    // Fetch all users for dropdown
     fetch(`${API_URL}/users`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     })
@@ -1655,22 +1660,15 @@ function openGameMenu() {
     .then(data => {
         if (data && data.users) {
             allUsersCache = data.users;
-            window._allUsersCache = allUsersCache;
-            if (typeof GameMenu !== 'undefined') GameMenu.updateAllUsers(allUsersCache, onlineUsers);
+            window._allUsersCache = data.users;
+            if (typeof NTTT !== 'undefined') NTTT.updateAllUsers(allUsersCache, onlineUsers);
         }
     })
     .catch(() => {});
-
-    // Immediately populate with cached data if available
-    if (allUsersCache.length > 0 && typeof GameMenu !== 'undefined') {
-        GameMenu.updateAllUsers(allUsersCache, onlineUsers);
-    }
 }
 
 function closeGameMenu() {
-    if (typeof GameMenu !== 'undefined') GameMenu.close();
-    const overlay = document.getElementById('gameMenuOverlay');
-    if (overlay) overlay.classList.remove('show');
+    window.closeNTTT && window.closeNTTT();
 }
 
 function sendOpenChallenge() {
