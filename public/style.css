@@ -1364,6 +1364,10 @@ header .header-subtitle {
   transition: bottom 0.35s cubic-bezier(0.4,0,0.2,1);
   box-shadow: var(--shadow-lg);
   padding-bottom: calc(16px + var(--safe-bottom));
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .game-menu.show { bottom: 0; }
 
@@ -1373,6 +1377,7 @@ header .header-subtitle {
   justify-content: space-between;
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 .game-menu-header h3 {
   font-size: 1.1em;
@@ -1387,12 +1392,60 @@ header .header-subtitle {
   padding: 4px 8px;
 }
 
-.game-menu-content {
-  padding: 16px;
+.game-menu-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
 }
+
+.game-menu-section-label {
+  font-size: 0.72rem;
+  font-weight: bold;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #d4a574;
+  margin: 10px 0 6px;
+}
+.game-menu-section-label:first-child { margin-top: 0; }
+
+/* Game menu invite rows */
+.game-menu-invite-row {
+  background: rgba(231,76,60,0.1);
+  border: 1px solid rgba(231,76,60,0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  color: #222;
+}
+.game-menu-invite-row .invite-name { font-weight: bold; margin-bottom: 4px; }
+.game-menu-invite-row .invite-actions { display: flex; gap: 6px; margin-top: 6px; }
+.invite-accept-btn {
+  flex: 1;
+  background: #2ecc71;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+.invite-accept-btn:hover { background: #27ae60; }
+.invite-decline-btn {
+  flex: 1;
+  background: transparent;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.invite-decline-btn:hover { background: rgba(231,76,60,0.1); }
 
 /* Game card */
 .game-card {

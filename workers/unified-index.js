@@ -1056,8 +1056,9 @@ export class ChatRoom {
 
   sendToUser(userId, data) {
     const message = JSON.stringify(data);
+    const numUserId = parseInt(userId);
     this.sessions.forEach(s => {
-      if (s.user && s.user.userId === userId) {
+      if (s.user && (s.user.userId === userId || s.user.userId === numUserId)) {
         try {
           s.websocket.send(message);
         } catch (err) {

@@ -169,12 +169,21 @@
             <h3>🎮 Games</h3>
             <button class="game-menu-close" onclick="closeGameMenu()">✕</button>
         </div>
-        <div class="game-menu-content">
+        <div class="game-menu-body">
+            <!-- Pending invites section -->
+            <div id="gameMenuInvites" style="display:none;">
+                <div class="game-menu-section-label">⚔️ Invites</div>
+                <div id="gameMenuInvitesList"></div>
+            </div>
+
             <!-- Ongoing games section -->
-            <div id="ongoingGamesSection" style="margin-bottom:12px;display:none;">
-                <div style="font-size:0.78rem;font-weight:bold;color:#d4a574;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">📋 Your Active Games</div>
+            <div id="ongoingGamesSection" style="display:none;">
+                <div class="game-menu-section-label">📋 Your Active Games</div>
                 <div id="ongoingGamesList"></div>
             </div>
+
+            <!-- New game -->
+            <div class="game-menu-section-label">🆕 New Game</div>
             <div class="game-card">
                 <div class="game-card-title">🟦 Ultimate Tic-Tac-Toe</div>
                 <div class="game-card-desc">9 boards in a grid — win 3 boards to win the match!</div>

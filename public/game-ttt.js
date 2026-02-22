@@ -229,30 +229,49 @@ const GameMenu = (() => {
 
   function updateOnlineUsers(users) {
     onlineUsersRef = users;
+    // If allUsersCache is available in app scope, use updateAllUsers
+    if (window._allUsersCache && window._allUsersCache.length > 0) {
+      updateAllUsers(window._allUsersCache, users);
+    }
+  }
+
+  function updateAllUsers(allUsers, onlineUsers) {
+    const select = document.getElementById('challengeUserSelect');
+    if (!select) return;
+    const onlineIds = new Set((onlineUsers || onlineUsersRef).map(u => u.userId));
+    // Filter out current user
+    const currentUserId = window._currentUserId;
+    const options = allUsers
+      .filter(u => u.id !== currentUserId)
+      .sort((a, b) => {
+        // Online first, then alphabetical
+        const aOnline = onlineIds.has(a.id);
+        const bOnline = onlineIds.has(b.id);
+        if (aOnline && !bOnline) return -1;
+        if (!aOnline && bOnline) return 1;
+        return a.username.localeCompare(b.username);
+      })
+      .map(u => {
+        const isOnline = onlineIds.has(u.id);
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = `${isOnline ? '🟢' : '⚫'} ${u.username}`;
+        return opt;
+      });
+    // Reset and repopulate
+    select.innerHTML = '<option value="">-- Pick a player --</option>';
+    options.forEach(opt => select.appendChild(opt));
   }
 
   function open() {
     const menu = document.getElementById('gameMenu');
     if (menu) menu.classList.add('show');
-    populateUserDropdown();
+    // updateAllUsers is called from openGameMenu in app-cloudflare.js
   }
 
   function close() {
     const menu = document.getElementById('gameMenu');
     if (menu) menu.classList.remove('show');
-  }
-
-  function populateUserDropdown() {
-    const select = document.getElementById('challengeUserSelect');
-    if (!select) return;
-    select.innerHTML = '<option value="">-- Pick a player --</option>';
-    onlineUsersRef.forEach(u => {
-      if (currentUserRef && u.username === currentUserRef.username) return;
-      const opt = document.createElement('option');
-      opt.value = u.userId;
-      opt.textContent = u.username;
-      select.appendChild(opt);
-    });
   }
 
   function sendChallenge(targetUserId) {
@@ -266,5 +285,5 @@ const GameMenu = (() => {
     close();
   }
 
-  return { init, updateOnlineUsers, open, close, sendChallenge };
+  return { init, updateOnlineUsers, updateAllUsers, open, close, sendChallenge };
 })();

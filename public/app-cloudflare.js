@@ -15,6 +15,7 @@ let onlineUsers = [];
 let notifications = []; // array of notification objects
 let notificationsUnread = 0;
 let myActiveGames = new Map(); // gameId -> gameState with yourSymbol
+let allUsersCache = []; // cache of all registered users from /users endpoint
 // Track invite cards in chat
 const pendingChallenges = new Map(); // challengeId -> DOM element
 
@@ -449,6 +450,7 @@ async function checkAuth() {
     // Load cached user immediately so UI shows fast
     if (userJson) {
         currentUser = JSON.parse(userJson);
+        window._currentUserId = currentUser.id;
         if (accountName) accountName.textContent = currentUser.username;
         if (accountEmail) accountEmail.textContent = currentUser.email;
         updateProfileAvatar(currentUser);
@@ -484,6 +486,7 @@ async function refreshAccessToken() {
             // Sync fresh user data (profile pic etc) from server
             if (data.user) {
                 currentUser = { ...currentUser, ...data.user };
+                window._currentUserId = currentUser.id;
                 localStorage.setItem('user', JSON.stringify(currentUser));
                 updateProfileAvatar(currentUser);
             }
@@ -801,14 +804,67 @@ function updateOngoingGamesUI() {
     }
     section.style.display = 'block';
     list.innerHTML = Array.from(myActiveGames.values()).map(g => {
-        const opponent = g.players[g.yourSymbol === 'X' ? 'O' : 'X'];
-        const isMyTurn = g.players[g.currentPlayer].userId === currentUser.id;
+        const opponentSymbol = g.yourSymbol === 'X' ? 'O' : 'X';
+        const opponent = g.players[opponentSymbol];
+        // Try to get a richer display name from allUsersCache
+        const cachedOpponent = allUsersCache.find(u => u.id === opponent.userId);
+        const opponentName = cachedOpponent ? cachedOpponent.username : (opponent.username || 'Opponent');
+        const isMyTurn = g.currentPlayer === g.yourSymbol;
         const opponentOnline = onlineUsers.some(u => u.userId === opponent.userId);
+        const turnText = isMyTurn ? '⚡ YOUR TURN' : '⏳ Their turn';
+        const onlineIndicator = opponentOnline ? '🟢' : '⚫';
         return `<div class="ongoing-game-row" onclick="resumeGame('${g.gameId}')">
-            <span>${g.gameName || 'Game'} vs ${opponent.username}</span>
-            <span style="font-size:0.75rem;color:${opponentOnline ? '#2ecc71' : '#888'}">${opponentOnline ? '🟢' : '⚫'} ${isMyTurn ? '— YOUR TURN' : "— their turn"}</span>
+            <div>
+                <div style="font-weight:bold;font-size:0.85rem;">${escapeHtml(g.gameName || 'Game')}</div>
+                <div style="font-size:0.78rem;color:#aaa;">${onlineIndicator} vs ${escapeHtml(opponentName)} — you are ${g.yourSymbol}</div>
+            </div>
+            <span style="font-size:0.75rem;color:${isMyTurn ? '#d4a574' : '#888'};font-weight:${isMyTurn ? 'bold' : 'normal'}">${turnText}</span>
         </div>`;
     }).join('');
+}
+
+function updateGameMenuInvites() {
+    const section = document.getElementById('gameMenuInvites');
+    const list = document.getElementById('gameMenuInvitesList');
+    if (!section || !list) return;
+
+    // Get game-invite type notifications
+    const invites = notifications.filter(n => n.type === 'game-invite');
+
+    if (invites.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = 'block';
+    list.innerHTML = invites.map(inv => `
+        <div class="game-menu-invite-row" id="invite-row-${inv.challengeId}">
+            <div class="invite-name">⚔️ ${escapeHtml(inv.challengerName || '')}</div>
+            <div style="font-size:0.78rem;color:#aaa;">${escapeHtml(inv.gameName || '')}</div>
+            <div class="invite-actions">
+                <button class="invite-accept-btn" onclick="acceptGameInvite('${inv.challengeId}')">✓ Accept</button>
+                <button class="invite-decline-btn" onclick="declineGameInvite('${inv.challengeId}')">✕ Decline</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function acceptGameInvite(challengeId) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'game-accepted', challengeId }));
+    }
+    // Remove from notifications
+    notifications = notifications.filter(n => n.challengeId !== challengeId);
+    updateGameMenuInvites();
+    updateBellUI();
+}
+
+function declineGameInvite(challengeId) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'game-declined', challengeId }));
+    }
+    notifications = notifications.filter(n => n.challengeId !== challengeId);
+    updateGameMenuInvites();
+    updateBellUI();
 }
 
 function resumeGame(gameId) {
@@ -1232,6 +1288,10 @@ function connectWebSocket() {
                 onlineUsers = data.users || [];
                 window._onlineUsers = onlineUsers;
                 if (typeof GameMenu !== 'undefined') GameMenu.updateOnlineUsers(onlineUsers);
+                // Update challenge dropdown if we have all users cached
+                if (allUsersCache.length > 0 && typeof GameMenu !== 'undefined') {
+                    GameMenu.updateAllUsers(allUsersCache, onlineUsers);
+                }
                 // Refresh members list if it's open
                 if (membersOverlay && membersOverlay.classList.contains('show')) openMembersList();
                 // Refresh ongoing games UI (opponent online status may have changed)
@@ -1239,7 +1299,7 @@ function connectWebSocket() {
             } else if (data.type === 'pending-notifications') {
                 data.notifications.forEach(n => addNotification(n));
             } else if (data.type === 'game-challenge') {
-                if (data.challenge.targetUserId && data.challenge.targetUserId === currentUser.id) {
+                if (data.challenge.targetUserId && String(data.challenge.targetUserId) === String(currentUser.id)) {
                     // Private invite — goes to bell
                     addNotification({
                         id: data.challenge.id,
@@ -1577,12 +1637,34 @@ function showToast(msg) {
 // Game menu handlers (called from HTML)
 function openGameMenu() {
     if (typeof GameMenu !== 'undefined') {
-        GameMenu.updateOnlineUsers(onlineUsers);
         GameMenu.init(ws, currentUser);
         GameMenu.open();
     }
     const overlay = document.getElementById('gameMenuOverlay');
     if (overlay) overlay.classList.add('show');
+    const menu = document.getElementById('gameMenu');
+    if (menu) menu.classList.add('show');
+    updateOngoingGamesUI();
+    updateGameMenuInvites();
+
+    // Fetch all users for challenge dropdown
+    fetch(`${API_URL}/users`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+        if (data && data.users) {
+            allUsersCache = data.users;
+            window._allUsersCache = allUsersCache;
+            if (typeof GameMenu !== 'undefined') GameMenu.updateAllUsers(allUsersCache, onlineUsers);
+        }
+    })
+    .catch(() => {});
+
+    // Immediately populate with cached data if available
+    if (allUsersCache.length > 0 && typeof GameMenu !== 'undefined') {
+        GameMenu.updateAllUsers(allUsersCache, onlineUsers);
+    }
 }
 
 function closeGameMenu() {
