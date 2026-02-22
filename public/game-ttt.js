@@ -108,6 +108,7 @@ const NTTT = (() => {
 
         const isOpen = targetVal === 'open';
         const gameName = `Nested TTT (Size ${selectedSize})`;
+        const tempId = 'pending-' + Date.now();
 
         ws.send(JSON.stringify({
             type: 'game-challenge',
@@ -117,17 +118,22 @@ const NTTT = (() => {
             targetUserId: isOpen ? null : parseInt(targetVal),
         }));
 
-        // Track outgoing challenge locally
-        if (!window._outgoingChallenges) window._outgoingChallenges = [];
-        window._outgoingChallenges.push({
-            challengeId: 'pending-' + Date.now(),
-            gameName,
-            targetName: isOpen ? null : (select.options[select.selectedIndex]?.text?.replace(/^[🟢⚫] /, '') || 'Unknown'),
-        });
-        refreshInvitesTab();
-
-        // Switch to invites tab to show it
-        ntttShowTab('invites');
+        if (!isOpen) {
+            // Only track private challenges in outgoing (open ones go to chat as cards)
+            if (!window._outgoingChallenges) window._outgoingChallenges = [];
+            const targetName = select.options[select.selectedIndex]?.text?.replace(/^[🟢⚫]\s*/, '') || 'Unknown';
+            window._outgoingChallenges.push({
+                challengeId: tempId,
+                gameName,
+                targetName,
+                targetUserId: parseInt(targetVal),
+            });
+            refreshInvitesTab();
+            ntttShowTab('invites');
+        } else {
+            // Open challenge — switch back to continue (it'll appear in chat)
+            ntttShowTab('continue');
+        }
     };
 
     // ---- Board rendering ----

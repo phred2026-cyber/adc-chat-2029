@@ -736,6 +736,26 @@ export class ChatRoom {
       }));
     }
 
+    // Send user's outgoing challenges
+    const outgoingChallenges = Array.from(this.challenges.values())
+      .filter(c => c.challengerId === user.userId);
+    if (outgoingChallenges.length > 0) {
+      websocket.send(JSON.stringify({
+        type: 'your-outgoing-challenges',
+        challenges: outgoingChallenges,
+      }));
+    }
+
+    // Send incoming private challenges for this user
+    const incomingChallenges = Array.from(this.challenges.values())
+      .filter(c => c.targetUserId === user.userId);
+    if (incomingChallenges.length > 0) {
+      websocket.send(JSON.stringify({
+        type: 'your-incoming-challenges',
+        challenges: incomingChallenges,
+      }));
+    }
+
     // Only broadcast join message if this is user's first session ever (new account)
     // We track this by checking if they've sent any messages before
     const hasMessages = await this.env.DB.prepare(

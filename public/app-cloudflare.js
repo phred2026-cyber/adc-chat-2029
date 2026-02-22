@@ -1299,9 +1299,46 @@ function connectWebSocket() {
                 if (membersOverlay && membersOverlay.classList.contains('show')) openMembersList();
             } else if (data.type === 'pending-notifications') {
                 data.notifications.forEach(n => addNotification(n));
+            } else if (data.type === 'your-outgoing-challenges') {
+                window._outgoingChallenges = data.challenges.map(c => ({
+                    challengeId: c.id,
+                    gameName: c.gameName,
+                    targetName: c.targetUserId ? null : 'anyone',
+                    targetUserId: c.targetUserId,
+                }));
+                // Resolve target names from user cache
+                if (window._allUsersCache) {
+                    window._outgoingChallenges.forEach(c => {
+                        if (c.targetUserId) {
+                            const u = window._allUsersCache.find(u => u.id === c.targetUserId);
+                            if (u) c.targetName = u.username;
+                        }
+                    });
+                }
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
+            } else if (data.type === 'your-incoming-challenges') {
+                // Add to notifications as game-invite type (avoid duplicates)
+                data.challenges.forEach(c => {
+                    const existing = notifications.find(n => n.challengeId === c.id);
+                    if (!existing) {
+                        notifications.push({
+                            id: c.id,
+                            type: 'game-invite',
+                            challengeId: c.id,
+                            challengerName: c.challengerName,
+                            gameName: c.gameName,
+                            read: false,
+                            timestamp: c.createdAt,
+                        });
+                    }
+                });
+                window._notifications = notifications;
+                notificationsUnread = notifications.filter(n => !n.read).length;
+                updateBellUI();
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-challenge') {
                 if (data.challenge.targetUserId && String(data.challenge.targetUserId) === String(currentUser.id)) {
-                    // Private invite — goes to bell
+                    // Private invite — goes to bell + NTTT invites tab
                     addNotification({
                         id: data.challenge.id,
                         type: 'game-invite',
@@ -1311,10 +1348,11 @@ function connectWebSocket() {
                         read: false,
                         timestamp: Date.now(),
                     });
-                } else {
-                    // Open challenge — goes to chat as before
+                } else if (!data.challenge.targetUserId) {
+                    // Open challenge — goes to chat as clickable card, no bell
                     handleIncomingChallenge(data.challenge);
                 }
+                // If targetUserId is set but doesn't match us, ignore (safety check)
             } else if (data.type === 'game-challenge-removed') {
                 const card = pendingChallenges.get(data.challengeId);
                 if (card) {
@@ -1620,6 +1658,11 @@ function acceptChallenge(challengeId) {
     ws.send(JSON.stringify({ type: 'game-accepted', challengeId }));
     const card = pendingChallenges.get(challengeId);
     if (card) { card.remove(); pendingChallenges.delete(challengeId); }
+}
+
+// Alias for open challenge cards (used by invite-card-accept-btn)
+function acceptOpenChallenge(challengeId) {
+    acceptChallenge(challengeId);
 }
 
 function declineChallenge(challengeId) {
