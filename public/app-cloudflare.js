@@ -1309,24 +1309,29 @@ function connectWebSocket() {
             } else if (data.type === 'pending-notifications') {
                 data.notifications.forEach(n => addNotification(n));
             } else if (data.type === 'your-outgoing-challenges') {
-                window._outgoingChallenges = data.challenges.map(c => ({
-                    challengeId: c.id,
-                    gameName: c.gameName,
-                    targetName: c.targetUserId ? null : 'anyone',
-                    targetUserId: c.targetUserId,
-                }));
-                // Resolve target names from user cache
-                if (window._allUsersCache) {
-                    window._outgoingChallenges.forEach(c => {
-                        if (c.targetUserId) {
-                            const u = window._allUsersCache.find(u => u.id === c.targetUserId);
-                            if (u) c.targetName = u.username;
-                        }
-                    });
-                }
+                window._outgoingChallenges = data.challenges.map(c => {
+                    let targetName = c.targetUserId ? null : 'anyone';
+                    if (c.targetUserId && window._allUsersCache) {
+                        const u = window._allUsersCache.find(u => u.id === c.targetUserId);
+                        if (u) targetName = u.username;
+                    }
+                    return {
+                        challengeId: c.id,
+                        gameName: c.gameName,
+                        targetName,
+                        targetUserId: c.targetUserId,
+                        isOpen: !c.targetUserId,
+                    };
+                });
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'your-incoming-challenges') {
-                // Add to notifications as game-invite type (avoid duplicates)
+                // On reconnect: server sends full authoritative list.
+                // Remove any stale game-invite notifications that no longer exist on server,
+                // then add any new ones we don't already have.
+                const serverIds = new Set(data.challenges.map(c => c.id));
+                // Drop stale game-invite notifications whose challenge is no longer on server
+                notifications = notifications.filter(n => n.type !== 'game-invite' || serverIds.has(n.challengeId));
+                // Add new ones
                 data.challenges.forEach(c => {
                     const existing = notifications.find(n => n.challengeId === c.id);
                     if (!existing) {
@@ -1412,6 +1417,11 @@ function connectWebSocket() {
                 if (window._outgoingChallenges) {
                     window._outgoingChallenges = window._outgoingChallenges.filter(c => c.challengeId !== data.challengeId);
                 }
+                // Also remove from bell notifications (handles challenger-cancelled private invites)
+                notifications = notifications.filter(n => n.challengeId !== data.challengeId);
+                window._notifications = notifications;
+                notificationsUnread = notifications.filter(n => !n.read).length;
+                updateBellUI();
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-started') {
                 // Clean up any own challenge cards

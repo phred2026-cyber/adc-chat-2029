@@ -657,6 +657,125 @@ export class ChatRoom {
     this.games = new Map();      // gameId -> gameState
     this.challenges = new Map(); // challengeId -> challenge
     this.pendingNotifications = new Map(); // userId -> array of notification objects
+    this.initialized = false;
+
+    // Load persisted challenges from D1 on first construction
+    this.state.blockConcurrencyWhile(async () => {
+      await this._ensureChallengesTable();
+      await this._loadChallengesFromD1();
+      this.initialized = true;
+    });
+  }
+
+  async _ensureChallengesTable() {
+    try {
+      await this.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS challenges (
+          id TEXT PRIMARY KEY,
+          challenger_id INTEGER NOT NULL,
+          challenger_name TEXT NOT NULL,
+          game TEXT NOT NULL,
+          game_name TEXT NOT NULL,
+          size INTEGER NOT NULL DEFAULT 1,
+          target_user_id INTEGER,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        )
+      `).run();
+    } catch (err) {
+      console.error('Error ensuring challenges table:', err);
+    }
+  }
+
+  async _loadChallengesFromD1() {
+    try {
+      const now = Date.now();
+      // Load only non-expired challenges
+      const rows = await this.env.DB.prepare(
+        'SELECT * FROM challenges WHERE expires_at > ?'
+      ).bind(now).all();
+      this.challenges.clear();
+      for (const row of (rows.results || [])) {
+        this.challenges.set(row.id, {
+          id: row.id,
+          challengerId: row.challenger_id,
+          challengerName: row.challenger_name,
+          game: row.game,
+          gameName: row.game_name,
+          size: row.size,
+          targetUserId: row.target_user_id || null,
+          createdAt: row.created_at,
+          expiresAt: row.expires_at,
+        });
+      }
+    } catch (err) {
+      console.error('Error loading challenges from D1:', err);
+    }
+  }
+
+  async _saveChallengeToDB(challenge) {
+    try {
+      await this.env.DB.prepare(`
+        INSERT OR REPLACE INTO challenges
+          (id, challenger_id, challenger_name, game, game_name, size, target_user_id, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        challenge.id,
+        challenge.challengerId,
+        challenge.challengerName,
+        challenge.game,
+        challenge.gameName,
+        challenge.size,
+        challenge.targetUserId || null,
+        challenge.createdAt,
+        challenge.expiresAt,
+      ).run();
+    } catch (err) {
+      console.error('Error saving challenge to D1:', err);
+    }
+  }
+
+  async _deleteChallengFromDB(challengeId) {
+    try {
+      await this.env.DB.prepare('DELETE FROM challenges WHERE id = ?').bind(challengeId).run();
+    } catch (err) {
+      console.error('Error deleting challenge from D1:', err);
+    }
+  }
+
+  async _sweepExpiredChallenges() {
+    const now = Date.now();
+    const expiredIds = [];
+    for (const [id, challenge] of this.challenges) {
+      if (challenge.expiresAt && challenge.expiresAt <= now) {
+        expiredIds.push(id);
+      }
+    }
+    for (const id of expiredIds) {
+      const challenge = this.challenges.get(id);
+      this.challenges.delete(id);
+      await this._deleteChallengFromDB(id);
+      // Queue notification for challenger
+      if (!this.pendingNotifications.has(challenge.challengerId)) {
+        this.pendingNotifications.set(challenge.challengerId, []);
+      }
+      this.pendingNotifications.get(challenge.challengerId).push({
+        id: now.toString() + '-expired-' + id,
+        type: 'challenge-expired',
+        gameName: challenge.gameName,
+        timestamp: now,
+        read: false,
+      });
+      // Notify challenger if online
+      this.sendToUser(challenge.challengerId, {
+        type: 'challenge-expired',
+        challengeId: id,
+        gameName: challenge.gameName,
+      });
+      // Broadcast removal to clean up everyone's UI
+      this.broadcast({ type: 'game-challenge-removed', challengeId: id });
+    }
+    return expiredIds.length;
   }
   
   async fetch(request) {
@@ -727,6 +846,9 @@ export class ChatRoom {
       users: this.sessions.map(s => ({ userId: s.user.userId, username: s.user.username })),
     }));
 
+    // Sweep expired challenges FIRST (before sending state to reconnecting user)
+    await this._sweepExpiredChallenges();
+
     // Send pending notifications to this user
     const pending = this.pendingNotifications.get(user.userId) || [];
     if (pending.length > 0) {
@@ -736,55 +858,29 @@ export class ChatRoom {
       }));
     }
 
-    // Send user's outgoing challenges
+    // Send user's outgoing challenges (after sweep so no stale ones)
     const outgoingChallenges = Array.from(this.challenges.values())
       .filter(c => c.challengerId === user.userId);
-    if (outgoingChallenges.length > 0) {
-      websocket.send(JSON.stringify({
-        type: 'your-outgoing-challenges',
-        challenges: outgoingChallenges,
-      }));
-    }
+    websocket.send(JSON.stringify({
+      type: 'your-outgoing-challenges',
+      challenges: outgoingChallenges,
+    }));
 
-    // Send incoming private challenges for this user
+    // Send incoming private challenges for this user (after sweep)
     const incomingChallenges = Array.from(this.challenges.values())
       .filter(c => c.targetUserId === user.userId);
-    if (incomingChallenges.length > 0) {
-      websocket.send(JSON.stringify({
-        type: 'your-incoming-challenges',
-        challenges: incomingChallenges,
-      }));
-    }
+    websocket.send(JSON.stringify({
+      type: 'your-incoming-challenges',
+      challenges: incomingChallenges,
+    }));
 
-    // Sweep expired challenges
-    const now = Date.now();
-    for (const [id, challenge] of this.challenges) {
-      if (challenge.expiresAt && challenge.expiresAt <= now) {
-        this.challenges.delete(id);
-        // Queue notification for challenger
-        if (!this.pendingNotifications) this.pendingNotifications = new Map();
-        if (!this.pendingNotifications.has(challenge.challengerId)) {
-          this.pendingNotifications.set(challenge.challengerId, []);
-        }
-        this.pendingNotifications.get(challenge.challengerId).push({
-          id: now.toString() + '-expired-' + id,
-          type: 'challenge-expired',
-          gameName: challenge.gameName,
-          timestamp: now,
-          read: false,
-        });
-      }
-    }
-
-    // Send all open challenges (not from this user) so they appear in Invites tab
+    // Send all open challenges (not from this user) so they appear in Invites tab (after sweep)
     const openChallenges = Array.from(this.challenges.values())
       .filter(c => c.targetUserId === null && c.challengerId !== user.userId);
-    if (openChallenges.length > 0) {
-      websocket.send(JSON.stringify({
-        type: 'open-challenges',
-        challenges: openChallenges,
-      }));
-    }
+    websocket.send(JSON.stringify({
+      type: 'open-challenges',
+      challenges: openChallenges,
+    }));
 
     // Only broadcast join message if this is user's first session ever (new account)
     // We track this by checking if they've sent any messages before
@@ -876,6 +972,8 @@ export class ChatRoom {
             expiresAt: Date.now() + 24 * 60 * 60 * 1000,
           };
           this.challenges.set(challengeId, challenge);
+          // Persist to D1 so it survives DO restarts
+          await this._saveChallengeToDB(challenge);
 
           // Echo real challengeId back to sender for temp ID reconciliation
           websocket.send(JSON.stringify({
@@ -885,7 +983,7 @@ export class ChatRoom {
           }));
 
           // Schedule DO alarm for expiry sweep
-          await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000);
+          try { await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000); } catch(_) {}
 
           if (data.targetUserId) {
             // Send only to specific target
@@ -910,6 +1008,7 @@ export class ChatRoom {
           }
           if (challenge.expiresAt && challenge.expiresAt <= Date.now()) {
             this.challenges.delete(challengeId);
+            await this._deleteChallengFromDB(challengeId);
             websocket.send(JSON.stringify({ type: 'game-error', error: 'This challenge has expired' }));
             this.broadcast({ type: 'game-challenge-removed', challengeId });
             return;
@@ -919,6 +1018,7 @@ export class ChatRoom {
             return;
           }
           this.challenges.delete(challengeId);
+          await this._deleteChallengFromDB(challengeId);
 
           // Create game — challenger is X, accepter is O
           const gameId = generateGameId();
@@ -976,6 +1076,7 @@ export class ChatRoom {
           const challenge = this.challenges.get(challengeId);
           if (challenge) {
             this.challenges.delete(challengeId);
+            await this._deleteChallengFromDB(challengeId);
             this.sendToUser(challenge.challengerId, {
               type: 'game-declined',
               challengeId,
@@ -1147,6 +1248,14 @@ export class ChatRoom {
           const challenge = this.challenges.get(challengeId);
           if (challenge && challenge.challengerId === user.userId) {
             this.challenges.delete(challengeId);
+            await this._deleteChallengFromDB(challengeId);
+            // If targeted, notify the target that the challenge is gone
+            if (challenge.targetUserId) {
+              this.sendToUser(challenge.targetUserId, {
+                type: 'game-challenge-removed',
+                challengeId,
+              });
+            }
             this.broadcast({
               type: 'game-challenge-removed',
               challengeId,
@@ -1213,37 +1322,11 @@ export class ChatRoom {
   }
 
   async alarm() {
-    const now = Date.now();
-    const expiredIds = [];
-    for (const [id, challenge] of this.challenges) {
-      if (challenge.expiresAt && challenge.expiresAt <= now) {
-        expiredIds.push(id);
-        // Notify challenger if online
-        this.sendToUser(challenge.challengerId, {
-          type: 'challenge-expired',
-          challengeId: id,
-          gameName: challenge.gameName,
-        });
-        // Broadcast removal to clean up chat cards and invites
-        this.broadcast({ type: 'game-challenge-removed', challengeId: id });
-        // Queue pending notification for offline challenger
-        if (!this.pendingNotifications) this.pendingNotifications = new Map();
-        if (!this.pendingNotifications.has(challenge.challengerId)) {
-          this.pendingNotifications.set(challenge.challengerId, []);
-        }
-        this.pendingNotifications.get(challenge.challengerId).push({
-          id: now.toString() + '-expired-' + id,
-          type: 'challenge-expired',
-          gameName: challenge.gameName,
-          timestamp: now,
-          read: false,
-        });
-      }
-    }
-    expiredIds.forEach(id => this.challenges.delete(id));
+    // Delegate to unified sweep which also deletes from D1
+    await this._sweepExpiredChallenges();
     // Reschedule if more challenges remain
     if (this.challenges.size > 0) {
-      await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000);
+      try { await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000); } catch(_) {}
     }
   }
 }
