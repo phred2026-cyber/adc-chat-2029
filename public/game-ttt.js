@@ -114,26 +114,23 @@ const NTTT = (() => {
             type: 'game-challenge',
             game: 'nested-ttt',
             gameName,
-            size: selectedSize,
+            size: Math.min(4, Math.max(0, selectedSize)), // cap at 4 for safety
             targetUserId: isOpen ? null : parseInt(targetVal),
+            tempId, // so server can echo it back for ID reconciliation
         }));
 
-        if (!isOpen) {
-            // Only track private challenges in outgoing (open ones go to chat as cards)
-            if (!window._outgoingChallenges) window._outgoingChallenges = [];
-            const targetName = select.options[select.selectedIndex]?.text?.replace(/^[🟢⚫]\s*/, '') || 'Unknown';
-            window._outgoingChallenges.push({
-                challengeId: tempId,
-                gameName,
-                targetName,
-                targetUserId: parseInt(targetVal),
-            });
-            refreshInvitesTab();
-            ntttShowTab('invites');
-        } else {
-            // Open challenge — switch back to continue (it'll appear in chat)
-            ntttShowTab('continue');
-        }
+        // Track in outgoing for BOTH open and private challenges
+        if (!window._outgoingChallenges) window._outgoingChallenges = [];
+        const targetName = isOpen ? 'anyone' : (select.options[select.selectedIndex]?.text?.replace(/^[🟢⚫]\s*/, '') || 'Unknown');
+        window._outgoingChallenges.push({
+            challengeId: tempId, // will be reconciled when challenge-created arrives
+            gameName,
+            targetName,
+            targetUserId: isOpen ? null : parseInt(targetVal),
+            isOpen,
+        });
+        refreshInvitesTab();
+        ntttShowTab('invites');
     };
 
     // ---- Board rendering ----
@@ -347,16 +344,20 @@ const NTTT = (() => {
             if (!incoming || incoming.length === 0) {
                 inEl.innerHTML = '<div class="nttt-empty">No incoming invites</div>';
             } else {
-                inEl.innerHTML = incoming.map(inv => `
+                inEl.innerHTML = incoming.map(inv => {
+                    const isOpen = inv.isOpen;
+                    const typeTag = isOpen ? ' <span style="font-size:0.72rem;color:#888;font-weight:normal;">(Open)</span>' : '';
+                    return `
                     <div class="nttt-invite-card incoming">
-                        <div class="nttt-invite-card-title">⚔️ ${escapeHtmlNTTT(inv.challengerName)}</div>
+                        <div class="nttt-invite-card-title">⚔️ ${escapeHtmlNTTT(inv.challengerName || inv.challengerName)}${typeTag}</div>
                         <div class="nttt-invite-card-sub">${escapeHtmlNTTT(inv.gameName)}</div>
                         <div class="nttt-invite-btns">
-                            <button class="nttt-invite-accept" onclick="ntttAcceptInvite('${inv.challengeId}')">✓ Accept</button>
-                            <button class="nttt-invite-decline" onclick="ntttDeclineInvite('${inv.challengeId}')">✕ Decline</button>
+                            <button class="nttt-invite-accept" onclick="ntttAcceptInvite('${inv.challengeId || inv.id}')">✓ Accept</button>
+                            ${!isOpen ? `<button class="nttt-invite-decline" onclick="ntttDeclineInvite('${inv.challengeId || inv.id}')">✕ Decline</button>` : ''}
                         </div>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             }
         }
 
@@ -388,9 +389,18 @@ const NTTT = (() => {
     window.ntttAcceptInvite = function(challengeId) {
         if (!ws) return;
         ws.send(JSON.stringify({ type: 'game-accepted', challengeId }));
-        // Remove from incoming
+        // Remove from notifications (private)
         const notifs = window._notifications || [];
         window._notifications = notifs.filter(n => n.challengeId !== challengeId);
+        // Remove from open challenges
+        if (window._openChallenges) {
+            window._openChallenges = window._openChallenges.filter(c => c.challengeId !== challengeId);
+        }
+        // Remove from chat card
+        if (typeof pendingChallenges !== 'undefined' && pendingChallenges) {
+            const card = pendingChallenges.get(challengeId);
+            if (card) { card.remove(); pendingChallenges.delete(challengeId); }
+        }
         refreshInvitesTab();
     };
 
@@ -411,7 +421,19 @@ const NTTT = (() => {
     };
 
     function refreshInvitesTab() {
-        const incoming = (window._notifications || []).filter(n => n.type === 'game-invite');
+        const privateIncoming = (window._notifications || []).filter(n => n.type === 'game-invite');
+        const openIncoming = (window._openChallenges || []).map(c => ({
+            ...c,
+            isOpen: true,
+        }));
+        // Combine, deduplicate by challengeId
+        const seen = new Set();
+        const incoming = [...privateIncoming, ...openIncoming].filter(c => {
+            const id = c.challengeId || c.id;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
         const outgoing = window._outgoingChallenges || [];
         renderInvites(incoming, outgoing);
         if (typeof updateBellUI === 'function') updateBellUI();

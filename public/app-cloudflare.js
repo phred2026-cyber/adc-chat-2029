@@ -747,6 +747,15 @@ function renderNotifications() {
         } else if (n.type === 'game-invite') {
             title = '⚔️ Game Invite';
             body = `${n.challengerName} challenged you to ${n.gameName}`;
+        } else if (n.type === 'challenge-expired') {
+            title = '⏰ Challenge Expired';
+            body = `Your ${escapeHtml(n.gameName || 'game')} challenge expired after 24 hours`;
+        } else if (n.type === 'forfeit') {
+            title = '🏳 Opponent Forfeited';
+            body = n.text || 'Your opponent forfeited';
+        } else if (n.type === 'game-over') {
+            title = '🏁 Game Over';
+            body = n.text || 'A game ended';
         } else {
             title = '🔔 Notification';
             body = n.text || '';
@@ -1336,9 +1345,25 @@ function connectWebSocket() {
                 notificationsUnread = notifications.filter(n => !n.read).length;
                 updateBellUI();
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
+            } else if (data.type === 'challenge-created') {
+                // Reconcile temp ID with real server-assigned ID
+                if (window._outgoingChallenges && data.tempId) {
+                    const entry = window._outgoingChallenges.find(c => c.challengeId === data.tempId);
+                    if (entry) entry.challengeId = data.challengeId;
+                }
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
+            } else if (data.type === 'open-challenges') {
+                window._openChallenges = data.challenges.map(c => ({
+                    challengeId: c.id,
+                    challengerName: c.challengerName,
+                    gameName: c.gameName,
+                    createdAt: c.createdAt,
+                    isOpen: true,
+                }));
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-challenge') {
                 if (data.challenge.targetUserId && String(data.challenge.targetUserId) === String(currentUser.id)) {
-                    // Private invite — goes to bell + NTTT invites tab
+                    // Private invite — bell + NTTT invites tab only
                     addNotification({
                         id: data.challenge.id,
                         type: 'game-invite',
@@ -1349,16 +1374,45 @@ function connectWebSocket() {
                         timestamp: Date.now(),
                     });
                 } else if (!data.challenge.targetUserId) {
-                    // Open challenge — goes to chat as clickable card, no bell
+                    // Open challenge — chat card AND invites tab
                     handleIncomingChallenge(data.challenge);
+                    if (!window._openChallenges) window._openChallenges = [];
+                    // Avoid duplicates
+                    if (!window._openChallenges.find(c => c.challengeId === data.challenge.id)) {
+                        window._openChallenges.push({
+                            challengeId: data.challenge.id,
+                            challengerName: data.challenge.challengerName,
+                            gameName: data.challenge.gameName,
+                            createdAt: data.challenge.createdAt || Date.now(),
+                            isOpen: true,
+                        });
+                    }
+                    if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
                 }
                 // If targetUserId is set but doesn't match us, ignore (safety check)
+            } else if (data.type === 'challenge-expired') {
+                if (window._outgoingChallenges) {
+                    window._outgoingChallenges = window._outgoingChallenges.filter(c => c.challengeId !== data.challengeId);
+                }
+                if (window._openChallenges) {
+                    window._openChallenges = window._openChallenges.filter(c => c.challengeId !== data.challengeId);
+                }
+                const card = pendingChallenges && pendingChallenges.get(data.challengeId);
+                if (card) { card.remove(); pendingChallenges.delete(data.challengeId); }
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-challenge-removed') {
                 const card = pendingChallenges.get(data.challengeId);
                 if (card) {
                     card.remove();
                     pendingChallenges.delete(data.challengeId);
                 }
+                if (window._openChallenges) {
+                    window._openChallenges = window._openChallenges.filter(c => c.challengeId !== data.challengeId);
+                }
+                if (window._outgoingChallenges) {
+                    window._outgoingChallenges = window._outgoingChallenges.filter(c => c.challengeId !== data.challengeId);
+                }
+                if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
             } else if (data.type === 'game-started') {
                 // Clean up any own challenge cards
                 for (const [key, card] of pendingChallenges) {
@@ -1400,6 +1454,9 @@ function connectWebSocket() {
                 // Remove from outgoing challenges
                 if (window._outgoingChallenges) {
                     window._outgoingChallenges = window._outgoingChallenges.filter(c => c.challengeId !== data.challengeId);
+                }
+                if (window._openChallenges) {
+                    window._openChallenges = window._openChallenges.filter(c => c.challengeId !== data.challengeId);
                 }
                 if (typeof NTTT !== 'undefined') NTTT.refreshInvitesTab();
                 // remove invite card from chat if it was open

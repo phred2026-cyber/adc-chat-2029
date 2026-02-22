@@ -756,6 +756,36 @@ export class ChatRoom {
       }));
     }
 
+    // Sweep expired challenges
+    const now = Date.now();
+    for (const [id, challenge] of this.challenges) {
+      if (challenge.expiresAt && challenge.expiresAt <= now) {
+        this.challenges.delete(id);
+        // Queue notification for challenger
+        if (!this.pendingNotifications) this.pendingNotifications = new Map();
+        if (!this.pendingNotifications.has(challenge.challengerId)) {
+          this.pendingNotifications.set(challenge.challengerId, []);
+        }
+        this.pendingNotifications.get(challenge.challengerId).push({
+          id: now.toString() + '-expired-' + id,
+          type: 'challenge-expired',
+          gameName: challenge.gameName,
+          timestamp: now,
+          read: false,
+        });
+      }
+    }
+
+    // Send all open challenges (not from this user) so they appear in Invites tab
+    const openChallenges = Array.from(this.challenges.values())
+      .filter(c => c.targetUserId === null && c.challengerId !== user.userId);
+    if (openChallenges.length > 0) {
+      websocket.send(JSON.stringify({
+        type: 'open-challenges',
+        challenges: openChallenges,
+      }));
+    }
+
     // Only broadcast join message if this is user's first session ever (new account)
     // We track this by checking if they've sent any messages before
     const hasMessages = await this.env.DB.prepare(
@@ -843,11 +873,19 @@ export class ChatRoom {
             size: data.size !== undefined ? data.size : 1,
             targetUserId: data.targetUserId || null, // null = open
             createdAt: Date.now(),
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
           };
           this.challenges.set(challengeId, challenge);
 
-          // Schedule cleanup
-          setTimeout(() => this.challenges.delete(challengeId), 5 * 60 * 1000);
+          // Echo real challengeId back to sender for temp ID reconciliation
+          websocket.send(JSON.stringify({
+            type: 'challenge-created',
+            challengeId: challengeId,
+            tempId: data.tempId || null,
+          }));
+
+          // Schedule DO alarm for expiry sweep
+          await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000);
 
           if (data.targetUserId) {
             // Send only to specific target
@@ -868,6 +906,12 @@ export class ChatRoom {
           const challenge = this.challenges.get(challengeId);
           if (!challenge) {
             websocket.send(JSON.stringify({ type: 'game-error', error: 'Challenge not found or expired' }));
+            return;
+          }
+          if (challenge.expiresAt && challenge.expiresAt <= Date.now()) {
+            this.challenges.delete(challengeId);
+            websocket.send(JSON.stringify({ type: 'game-error', error: 'This challenge has expired' }));
+            this.broadcast({ type: 'game-challenge-removed', challengeId });
             return;
           }
           if (challenge.challengerId === user.userId) {
@@ -1044,6 +1088,9 @@ export class ChatRoom {
 
           // Broadcast game state update
           const updateMsg = { type: game.gameOver ? 'game-over' : 'game-state-update', gameState: game };
+          if (game.gameOver) {
+            updateMsg.winnerName = game.winner === 'draw' ? 'draw' : game.players[game.winner]?.username;
+          }
           this.broadcast(updateMsg);
 
           // Pending notification for offline player
@@ -1066,6 +1113,7 @@ export class ChatRoom {
           }
 
           if (game.gameOver) {
+            const winnerName = game.winner === 'draw' ? 'draw' : game.players[game.winner]?.username;
             // Broadcast game-over-announce for the chat system message
             this.broadcast({
               type: 'game-over-announce',
@@ -1073,6 +1121,7 @@ export class ChatRoom {
               player1: game.players.X.username,
               player2: game.players.O.username,
               winner: game.winner,
+              winnerName,
             });
             // Cleanup after 1 minute
             setTimeout(() => this.games.delete(gameId), 60 * 1000);
@@ -1161,5 +1210,40 @@ export class ChatRoom {
     }));
     // Include game opponent online status
     this.broadcast({ type: 'online-users', users });
+  }
+
+  async alarm() {
+    const now = Date.now();
+    const expiredIds = [];
+    for (const [id, challenge] of this.challenges) {
+      if (challenge.expiresAt && challenge.expiresAt <= now) {
+        expiredIds.push(id);
+        // Notify challenger if online
+        this.sendToUser(challenge.challengerId, {
+          type: 'challenge-expired',
+          challengeId: id,
+          gameName: challenge.gameName,
+        });
+        // Broadcast removal to clean up chat cards and invites
+        this.broadcast({ type: 'game-challenge-removed', challengeId: id });
+        // Queue pending notification for offline challenger
+        if (!this.pendingNotifications) this.pendingNotifications = new Map();
+        if (!this.pendingNotifications.has(challenge.challengerId)) {
+          this.pendingNotifications.set(challenge.challengerId, []);
+        }
+        this.pendingNotifications.get(challenge.challengerId).push({
+          id: now.toString() + '-expired-' + id,
+          type: 'challenge-expired',
+          gameName: challenge.gameName,
+          timestamp: now,
+          read: false,
+        });
+      }
+    }
+    expiredIds.forEach(id => this.challenges.delete(id));
+    // Reschedule if more challenges remain
+    if (this.challenges.size > 0) {
+      await this.state.storage.setAlarm(Date.now() + 60 * 60 * 1000);
+    }
   }
 }
