@@ -547,12 +547,14 @@ const NTTT = (() => {
     // ---- Game state updates (called from app-cloudflare.js) ----
 
     // Called when a game starts (either player accepted or we accepted)
-    function onGameStarted(gameState, yourSymbol) {
+    // isNewGame = true when this is a fresh game start, false when restoring on reconnect
+    function onGameStarted(gameState, yourSymbol, isNewGame) {
+        if (isNewGame === undefined) isNewGame = true; // default: treat as new
         if (!window._myActiveGames) window._myActiveGames = new Map();
         const fullGame = { ...gameState, yourSymbol };
         window._myActiveGames.set(gameState.gameId, fullGame);
 
-        // Determine if we are the challenger (sender) — challenger is always X
+        // Determine if we are the challenger (sender) — challenger is always assigned X
         const isChallenger = (currentUserId !== null) &&
             gameState.players &&
             gameState.players.X &&
@@ -561,10 +563,13 @@ const NTTT = (() => {
         renderGameList();
         refreshInvitesTab();
 
-        if (isChallenger) {
+        if (isChallenger || !isNewGame) {
             // Challenger: silently add to Continue list, show a toast but DON'T auto-open overlay
-            if (typeof showToast === 'function') {
-                showToast('⚔️ Your challenge was accepted! Game is ready in Continue.');
+            // Also: on reconnect restore, don't force-open for anyone
+            if (isChallenger && isNewGame) {
+                if (typeof showToast === 'function') {
+                    showToast('⚔️ Your challenge was accepted! Game is ready in Continue.');
+                }
             }
             // If NTTT overlay is already open, refresh so the game appears in Continue tab
             if (overlay && overlay.classList.contains('show')) {
@@ -572,7 +577,7 @@ const NTTT = (() => {
                 renderGameList();
             }
         } else {
-            // Acceptor: auto-open the overlay and jump straight into the game board
+            // Acceptor on a fresh game start: auto-open the overlay and jump into the board
             currentGame = fullGame;
             if (gameTitle) gameTitle.textContent = gameState.gameName || 'Nested TTT';
 
