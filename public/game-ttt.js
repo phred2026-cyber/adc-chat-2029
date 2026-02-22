@@ -190,12 +190,7 @@ const NTTT = (() => {
             return el;
         }
 
-        // Check if this board is active (where you MUST play)
-        const isActive = isActivePath(path, activeBoard);
-        if (isActive && currentGame && !currentGame.gameOver) {
-            el.classList.add('active');
-            el.style.outline = `3px solid #d4a574`;
-        }
+        // Free play: no active board restriction — all boards are always playable
 
         // Set sizing
         const px = boardPixelSize(size);
@@ -223,8 +218,7 @@ const NTTT = (() => {
                     const canPlay = currentGame &&
                         !currentGame.gameOver &&
                         currentGame.players[currentGame.currentPlayer] &&
-                        currentGame.players[currentGame.currentPlayer].userId === currentUserId &&
-                        isActive;
+                        currentGame.players[currentGame.currentPlayer].userId === currentUserId;
                     if (canPlay) {
                         cell.addEventListener('click', () => makeMove(path, i));
                     } else {

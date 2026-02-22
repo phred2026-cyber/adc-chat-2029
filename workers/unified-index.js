@@ -1202,15 +1202,7 @@ export class ChatRoom {
             return;
           }
 
-          // Validate move is in active board
-          if (game.activeBoard !== null) {
-            for (let i = 0; i < game.activeBoard.length; i++) {
-              if (game.activeBoard[i] !== null && boardPath[i] !== game.activeBoard[i]) {
-                websocket.send(JSON.stringify({ type: 'game-error', error: 'Must play in active board' }));
-                return;
-              }
-            }
-          }
+          // Free play: no active board restriction — any empty cell is valid
 
           // Apply move recursively
           function setCell(board, path, idx, symbol) {
@@ -1273,12 +1265,9 @@ export class ChatRoom {
             }
           }
 
-          // Set next active board = the cell index the player just played
-          // (standard Ultimate TTT rule — if that board is won, play anywhere)
+          // Free play: activeBoard is always null (no routing restriction)
           if (!game.gameOver) {
-            const nextBoardKey = [...boardPath.slice(0, -1), cellIndex].join('-');
-            const nextBoardWon = game.wonBoards[nextBoardKey];
-            game.activeBoard = nextBoardWon ? null : [...boardPath.slice(0, -1), cellIndex];
+            game.activeBoard = null;
             game.currentPlayer = expectedPlayer === 'X' ? 'O' : 'X';
           }
 
